@@ -80,7 +80,6 @@
     }
     .btn.ghost{background: rgba(0,0,0,.18);}
     .btn.disabled{opacity:.45; pointer-events:none;}
-
     .tonIcon{width:18px;height:18px;object-fit:contain;display:block;filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));}
     .mono{font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1;}
 
@@ -96,7 +95,6 @@
       position: relative;
     }
 
-    /* Chart */
     #chart{
       height:360px;
       background: radial-gradient(900px 520px at 50% 0%, rgba(124,77,255,.30), rgba(124,77,255,.08) 45%, rgba(0,0,0,.10) 70%);
@@ -135,6 +133,95 @@
       text-transform: uppercase;
     }
 
+    /* History overlay bottom-left */
+    .historyWrap{
+      position:absolute;
+      left:14px;
+      bottom:14px;
+      z-index: 25;
+      display:flex;
+      align-items:flex-end;
+      gap:10px;
+      pointer-events:none;
+    }
+    .histRow{
+      display:flex;
+      gap:6px;
+      padding:8px 10px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.20);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 14px 35px rgba(0,0,0,.35);
+      max-width: 520px;
+      overflow:hidden;
+    }
+    .histItem{
+      display:flex;
+      align-items:center;
+      gap:4px;
+      font-weight:1000;
+      font-size:11px;
+      color: rgba(242,239,255,.92);
+      white-space:nowrap;
+    }
+    .tri{
+      width: 0; height: 0;
+      border-left: 7px solid transparent;
+      border-right: 7px solid transparent;
+      position: relative;
+      filter: drop-shadow(0 8px 18px rgba(0,0,0,.35));
+    }
+    .tri.up{
+      border-bottom: 12px solid var(--green);
+    }
+    .tri.down{
+      border-top: 12px solid var(--red);
+    }
+    /* белый внутренний треугольник */
+    .tri::after{
+      content:"";
+      position:absolute;
+      left:-5px;
+      top:-10px;
+      width:0;height:0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+    }
+    .tri.up::after{
+      top:2px;
+      border-bottom: 9px solid rgba(255,255,255,.92);
+    }
+    .tri.down::after{
+      top:-11px;
+      border-top: 9px solid rgba(255,255,255,.92);
+    }
+    .pctText{
+      min-width: 42px;
+      text-align:right;
+    }
+
+    /* Result toast */
+    .toast{
+      position:absolute;
+      right:14px;
+      bottom:14px;
+      z-index: 30;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.25);
+      backdrop-filter: blur(8px);
+      font-weight:1100;
+      font-size:12px;
+      display:none;
+      pointer-events:none;
+      box-shadow: 0 18px 45px rgba(0,0,0,.45);
+    }
+    .toast.show{display:block;}
+    .toast.win{border-color: rgba(49,209,124,.35);}
+    .toast.lose{border-color: rgba(255,77,77,.35);}
+
     /* Bet panel */
     .betWrap{padding:12px;}
     .amountGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}
@@ -166,7 +253,6 @@
       border:1px solid rgba(255,77,77,.70);
       box-shadow: 0 14px 34px rgba(255,77,77,.18);
     }
-
     .hint{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.35;min-height:34px;}
 
     /* BONUS sheet */
@@ -248,6 +334,9 @@
     }
     .row2{display:flex;gap:10px;margin-top:12px;}
     .row2 .sheetAction{flex:1 1 0;justify-content:center;}
+
+    /* hide any accidental tradingview links/logo */
+    a[href*="tradingview"], a[href*="TradingView"]{display:none!important;}
   </style>
 </head>
 
@@ -293,6 +382,14 @@
           <div class="cdNum mono" id="cdNum">7</div>
           <div class="cdSub">BET</div>
         </div>
+
+        <!-- History overlay -->
+        <div class="historyWrap">
+          <div class="histRow" id="histRow"></div>
+        </div>
+
+        <!-- Result toast -->
+        <div class="toast" id="toast"></div>
       </div>
 
       <!-- Bet card -->
@@ -427,36 +524,6 @@
     $("betAmt").textContent = selectedAmt.toFixed(2);
   });
 
-  // Chart
-  let chart, areaSeries;
-  function initChart(){
-    const el = $("chart");
-    chart = LightweightCharts.createChart(el, {
-      autoSize: true,
-      layout: { background: { type: "solid", color: "transparent" }, textColor: "rgba(242,239,255,.75)" },
-      grid: { vertLines: { color: "rgba(255,255,255,.06)" }, horzLines: { color: "rgba(255,255,255,.06)" } },
-      rightPriceScale: { borderColor: "rgba(255,255,255,.12)", textColor: "rgba(242,239,255,.7)" },
-      timeScale: { borderColor: "rgba(255,255,255,.12)", timeVisible: true, secondsVisible: true },
-      crosshair: { vertLine: { color: "rgba(124,77,255,.45)" }, horzLine: { color: "rgba(124,77,255,.35)" } }
-    });
-
-    areaSeries = chart.addAreaSeries({
-      lineWidth: 2,
-      lineColor: "rgba(49,209,124,.95)",
-      topColor: "rgba(49,209,124,.35)",
-      bottomColor: "rgba(49,209,124,.05)",
-    });
-
-    new ResizeObserver(() => chart.timeScale().fitContent()).observe(el);
-  }
-
-  function toChartData(series){
-    return (series || []).map(([ts, price]) => ({
-      time: Math.floor(ts / 1000),
-      value: Number(price)
-    }));
-  }
-
   async function apiGet(path){
     const r = await fetch(apiUrl(path), { cache: "no-store" });
     if(!r.ok) throw new Error(path + " " + r.status);
@@ -472,15 +539,90 @@
     return await r.json();
   }
 
-  // Time sync
-  let timeOffsetMs = 0; // serverNow - Date.now()
+  // =========================
+  // Chart (нитка)
+  // =========================
+  let chart, lineSeries;
+  let priceLines = [];
 
-  // Round/game
+  function initChart(){
+    const el = $("chart");
+    chart = LightweightCharts.createChart(el, {
+      autoSize: true,
+      layout: { background: { type: "solid", color: "transparent" }, textColor: "rgba(242,239,255,.75)" },
+      grid: { vertLines: { color: "rgba(255,255,255,.06)" }, horzLines: { color: "rgba(255,255,255,.06)" } },
+      rightPriceScale: {
+        borderColor: "rgba(255,255,255,.12)",
+        textColor: "rgba(242,239,255,.70)",
+        scaleMargins: { top: 0.12, bottom: 0.12 }
+      },
+      timeScale: { borderColor: "rgba(255,255,255,.12)", timeVisible: true, secondsVisible: true },
+      crosshair: { vertLine: { color: "rgba(124,77,255,.45)" }, horzLine: { color: "rgba(124,77,255,.35)" } }
+    });
+
+    lineSeries = chart.addLineSeries({
+      lineWidth: 2,
+      color: "rgba(49,209,124,.95)",
+      priceFormat: {
+        type: "custom",
+        formatter: (v) => `${Number(v).toFixed(0)}%`
+      }
+    });
+
+    // фиксируем шкалу -100..100 через “невидимые” точки (чтобы не прыгала)
+    // (реально добавим отдельный series для границ)
+    const boundSeries = chart.addLineSeries({
+      color: "rgba(0,0,0,0)",
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    const now = Math.floor(Date.now()/1000);
+    boundSeries.setData([
+      { time: now - 2, value: -100 },
+      { time: now - 1, value: 100 },
+    ]);
+
+    // линии на шкале: 100,50,0,-50,-100
+    function addPL(val, title){
+      return lineSeries.createPriceLine({
+        price: val,
+        color: "rgba(255,255,255,.14)",
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dotted,
+        axisLabelVisible: true,
+        title
+      });
+    }
+    priceLines.push(addPL(100, "100%"));
+    priceLines.push(addPL(50, "50%"));
+    priceLines.push(addPL(0, "0%"));
+    priceLines.push(addPL(-50, "-50%"));
+    priceLines.push(addPL(-100, "-100%"));
+
+    new ResizeObserver(() => chart.timeScale().fitContent()).observe(el);
+  }
+
+  function toChartData(series){
+    // series: [[ts_ms, pct], ...]
+    return (series || []).map(([ts, pct]) => ({
+      time: Math.floor(ts / 1000),
+      value: Number(pct)
+    }));
+  }
+
+  // =========================
+  // Round sync + countdown
+  // =========================
+  let timeOffsetMs = 0;
   let currentRound = null;
   let betMs = 7000;
   let roundMs = 19000;
 
-  // Countdown UI
+  function serverNow(){
+    return Date.now() + timeOffsetMs;
+  }
+
   const cd = $("countdown");
   const cdNum = $("cdNum");
   const cdRing = $("cdRing");
@@ -490,18 +632,60 @@
   cdRing.setAttribute("stroke-dashoffset", "0");
 
   function setRing(progress01){
-    // progress01: 1 -> full, 0 -> empty
     const off = CIRC * (1 - Math.max(0, Math.min(1, progress01)));
     cdRing.setAttribute("stroke-dashoffset", String(off));
   }
   function setRingColor(secLeft){
-    // 7-5 green, 4-3 yellow, 2-0 red
     if (secLeft >= 5) cdRing.setAttribute("stroke", "rgba(49,209,124,.95)");
     else if (secLeft >= 3) cdRing.setAttribute("stroke", "rgba(255,204,51,.95)");
     else cdRing.setAttribute("stroke", "rgba(255,77,77,.95)");
   }
 
-  // Wallet/balance/deposit (оставляем твою работающую схему)
+  // =========================
+  // History UI
+  // =========================
+  function renderHistory(items){
+    const row = $("histRow");
+    row.innerHTML = "";
+    const arr = Array.isArray(items) ? items : [];
+    // показываем справа-налево? как в слотах обычно — новые слева
+    for (const it of arr.slice(0, 12)) {
+      const pct = Number(it.pct || 0);
+      const wrap = document.createElement("div");
+      wrap.className = "histItem";
+
+      const tri = document.createElement("div");
+      tri.className = "tri " + (pct >= 0 ? "up" : "down");
+
+      const txt = document.createElement("div");
+      txt.className = "pctText mono";
+      const s = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
+      txt.textContent = s;
+
+      wrap.appendChild(tri);
+      wrap.appendChild(txt);
+      row.appendChild(wrap);
+    }
+  }
+
+  // =========================
+  // Toast result
+  // =========================
+  const toast = $("toast");
+  let toastTimer = null;
+  function showToast(kind, text){
+    toast.className = "toast show " + (kind || "");
+    toast.textContent = text;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toast.className = "toast";
+      toast.textContent = "";
+    }, 1500);
+  }
+
+  // =========================
+  // Wallet/balance/deposit (твоя схема)
+  // =========================
   let __tonCore = null;
   async function tonCore(){
     if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
@@ -713,7 +897,6 @@
     if (!window.__tonUI?.sendTransaction){ showPopup("TON", "TonConnect UI не готов."); return; }
 
     try{
-      // без "создаю intent" — просто тихо
       const intent = await apiPost("/api/deposit_intent?t=" + Date.now(), { amountTon, address: raw });
 
       await window.__tonUI.sendTransaction({
@@ -738,7 +921,9 @@
     }
   };
 
-  // Bets / game UI
+  // =========================
+  // Bet UI + settle
+  // =========================
   let pos = null;
   function setHint(text){ $("hint").textContent = text || ""; }
   function setPosStatus(){
@@ -747,7 +932,6 @@
   }
 
   let bettingOpen = false;
-
   function setButtonsEnabled(on){
     const b1 = $("btnLong");
     const b2 = $("btnShort");
@@ -763,15 +947,15 @@
   }
 
   async function place(side){
-    if(!bettingOpen){
-      return;
-    }
+    if(!bettingOpen) return;
+
     const raw = getWalletRawLS();
     if(!raw){
       openTonModal();
       showPopup("TON", "Сначала привяжи кошелёк.");
       return;
     }
+
     try{
       await apiPost("/api/bet_place?t=" + Date.now(), {
         side,
@@ -785,7 +969,6 @@
       setHint("Ставка принята");
       await refreshBalance();
     }catch(e){
-      // тихо и без лишнего текста
       setHint("Ошибка ставки");
     }
   }
@@ -793,9 +976,65 @@
   $("btnLong").onclick = () => place("long");
   $("btnShort").onclick = () => place("short");
 
-  // Round sync + countdown
-  function serverNow(){
-    return Date.now() + timeOffsetMs;
+  // автосеттл раз в раунд
+  let lastSettledRound = null;
+  async function trySettleIfNeeded(){
+    if(!pos || !currentRound) return;
+
+    const nowS = serverNow();
+    const finishAt = currentRound.nextAt; // конец раунда
+    if (nowS < finishAt) return;
+
+    // только один раз на раунд
+    if (lastSettledRound === pos.roundId) return;
+
+    const raw = getWalletRawLS();
+    if(!raw) return;
+
+    try{
+      const r = await apiPost("/api/bet_settle?t=" + Date.now(), {
+        address: raw,
+        roundId: pos.roundId
+      });
+
+      if (r?.status === "pending") return; // подождём
+
+      lastSettledRound = pos.roundId;
+      await refreshBalance();
+
+      const pct = Number(r.pct);
+      const sPct = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
+
+      // WIN/LOSE текст (в зависимости от profitTon)
+      const profit = Number(r.profitTon || 0);
+      if (profit >= 0) showToast("win", `WIN ${sPct}`);
+      else showToast("lose", `LOSE ${sPct}`);
+
+      // после результата — сброс позиции
+      pos = null;
+      setPosStatus();
+      setHint("");
+    }catch(e){
+      // молча
+    }
+  }
+
+  // Countdown UI
+  const cdNum = $("cdNum");
+  const cdRing = $("cdRing");
+  const R = 46;
+  const CIRC = 2 * Math.PI * R;
+  cdRing.setAttribute("stroke-dasharray", String(CIRC));
+  cdRing.setAttribute("stroke-dashoffset", "0");
+
+  function setRing(progress01){
+    const off = CIRC * (1 - Math.max(0, Math.min(1, progress01)));
+    cdRing.setAttribute("stroke-dashoffset", String(off));
+  }
+  function setRingColor(secLeft){
+    if (secLeft >= 5) cdRing.setAttribute("stroke", "rgba(49,209,124,.95)");
+    else if (secLeft >= 3) cdRing.setAttribute("stroke", "rgba(255,204,51,.95)");
+    else cdRing.setAttribute("stroke", "rgba(255,77,77,.95)");
   }
 
   function updateBetCountdown(){
@@ -804,50 +1043,44 @@
     const nowS = serverNow();
     const startAt = currentRound.startAt;
     const endAt = currentRound.endAt;
-    const nextAt = currentRound.nextAt;
 
-    // мы показываем только окно ставок 7 сек
     if (nowS >= startAt && nowS < endAt){
       const leftMs = endAt - nowS;
       const secLeft = Math.max(0, Math.ceil(leftMs/1000));
 
-      cd.classList.add("show");
+      $("countdown").classList.add("show");
       cdNum.textContent = String(secLeft);
 
-      // прогресс по кругу (7 -> 0)
       const progress = leftMs / betMs;
       setRing(progress);
       setRingColor(secLeft);
 
       setButtonsEnabled(true);
-      setHint(""); // без лишнего
     } else {
-      cd.classList.remove("show");
+      $("countdown").classList.remove("show");
       setButtonsEnabled(false);
-
-      // после ставок идёт 12 сек "игры" — ничего не пишем
-      // когда раунд закончился — сбрасываем позицию
-      if (nowS >= nextAt){
-        pos = null;
-        setPosStatus();
-      }
     }
   }
 
+  // =========================
   // Load state/series
+  // =========================
   async function loadState(){
     const data = await apiGet("/api/state?t=" + Date.now());
     timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
     currentRound = data.round;
     betMs = data.betMs || 7000;
     roundMs = data.roundMs || 19000;
+
+    // история
+    renderHistory(data.history || []);
   }
 
   async function loadSeries(){
     const data = await apiGet("/api/series?t=" + Date.now());
     const series = toChartData(data.series);
     if(series.length){
-      areaSeries.setData(series);
+      lineSeries.setData(series);
     }
   }
 
@@ -864,13 +1097,17 @@
       await syncWalletUI();
       await resumeDepositsSilently();
       await refreshBalance();
-    }catch{}
+    }catch(e){
+      // если график не рисуется — значит api/series не отдаёт или ошибка.
+      // но тебе в UI это не показываем.
+    }
   })();
 
-  setInterval(() => loadState().catch(()=>{}), 500);
-  setInterval(() => loadSeries().catch(()=>{}), 1200);
+  setInterval(() => loadState().catch(()=>{}), 600);
+  setInterval(() => loadSeries().catch(()=>{}), 1100);
   setInterval(() => updateBetCountdown(), 120);
-  setInterval(() => refreshBalance().catch(()=>{}), 6000);
+  setInterval(() => trySettleIfNeeded(), 600);
+  setInterval(() => refreshBalance().catch(()=>{}), 6500);
 </script>
 </body>
 </html>
