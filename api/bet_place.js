@@ -1,1 +1,80 @@
+import { Redis } from "@upstash/redis";
+import { Address } from "@ton/core";
 
+export const config = { runtime: "nodejs" };
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+const BET_MS = 9000;
+const POST_DELAY_MS = 6000;
+const ROUND_MS = BET_MS + POST_DELAY_MS;
+
+function canonicalFriendly(addr) {
+  const a = Address.parse(String(addr));
+  return a.toString({ urlSafe: true, bounceable: false, testOnly: false });
+}
+function toNano(amountTon) {
+  const n = Number(amountTon);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 1e9);
+}
+
+export default async function handler(req, res) {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Type", "application/json");
+    if (req.method !== "POST") return res.status(405).json({ error: "method" });
+
+    const { address, roundId, side, amountTon } = req.body || {};
+    if (!address) return res.status(400).json({ error: "no_address" });
+
+    const s = String(side || "").toLowerCase();
+    if (s !== "long" && s !== "short") return res.status(400).json({ error: "bad_side" });
+
+    const amountNano = toNano(amountTon);
+    if (!amountNano || amountNano <= 0) return res.status(400).json({ error: "bad_amount" });
+
+    let friendly = "";
+    try { friendly = canonicalFriendly(address); }
+    catch { return res.status(400).json({ error: "bad_address" }); }
+
+    const now = Date.now();
+    const curRound = Math.floor(now / ROUND_MS);
+    const startAt = curRound * ROUND_MS;
+    const endAt = startAt + BET_MS;
+
+    const rid = Number(roundId);
+    if (!Number.isFinite(rid) || rid !== curRound) return res.status(400).json({ error: "bad_round" });
+    if (now >= endAt) return res.status(400).json({ error: "round_closed" });
+
+    // один бет на раунд
+    const betKey = `bet:${rid}:${friendly}`;
+    const already = await redis.get(betKey);
+    if (already) return res.status(400).json({ error: "already_placed" });
+
+    const balKey = `bal:${friendly}`;
+    const curBal = Number(await redis.get(balKey) || "0");
+    if (!Number.isFinite(curBal) || curBal < amountNano) return res.status(400).json({ error: "insufficient" });
+
+    // списываем
+    await redis.set(balKey, String(curBal - amountNano));
+
+    const bet = {
+      roundId: rid,
+      address: friendly,
+      side: s,
+      amountNano,
+      amountTon: amountNano / 1e9,
+      placedAt: now
+    };
+
+    await redis.set(betKey, JSON.stringify(bet), { ex: 24 * 60 * 60 });
+
+    return res.status(200).json({ ok: true, bet });
+  } catch (e) {
+    return res.status(500).json({ error: "bet_place_error", message: String(e) });
+  }
+}
