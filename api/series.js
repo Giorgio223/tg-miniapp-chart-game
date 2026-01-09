@@ -7,8 +7,9 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const SERIES_KEY = "chart:series";       // JSON: [[ts, price], ...]
-const LAST_PRICE_KEY = "chart:lastPrice"; // string price
+const SERIES_KEY = "chart:series";        // JSON [[ts, price], ...]
+const LAST_PRICE_KEY = "chart:lastPrice"; // string
+const LOCK_PREFIX = "chart:tick:";        // lock per second
 
 function rand(min, max) {
   return min + Math.random() * (max - min);
@@ -22,18 +23,17 @@ export default async function handler(req, res) {
 
     const now = Date.now();
 
-    let seriesRaw = await redis.get(SERIES_KEY);
+    // грузим series
     let series = [];
-    if (typeof seriesRaw === "string" && seriesRaw) {
-      try { series = JSON.parse(seriesRaw); } catch { series = []; }
+    const raw = await redis.get(SERIES_KEY);
+    if (typeof raw === "string" && raw) {
+      try { series = JSON.parse(raw); } catch { series = []; }
     }
 
+    // стартовая генерация
     let lastPrice = Number(await redis.get(LAST_PRICE_KEY));
-    if (!Number.isFinite(lastPrice) || lastPrice <= 0) {
-      lastPrice = 100 + rand(-1, 1);
-    }
+    if (!Number.isFinite(lastPrice) || lastPrice <= 0) lastPrice = 100 + rand(-1, 1);
 
-    // если series пустой — создаём стартовые точки
     if (!Array.isArray(series) || series.length === 0) {
       series = [];
       let p = lastPrice;
@@ -42,25 +42,37 @@ export default async function handler(req, res) {
         series.push([now - i * 1000, Number(p.toFixed(4))]);
       }
       lastPrice = series[series.length - 1][1];
-    } else {
+      await redis.set(SERIES_KEY, JSON.stringify(series), { ex: 60 * 60 });
+      await redis.set(LAST_PRICE_KEY, String(lastPrice), { ex: 60 * 60 });
+      return res.status(200).json({ serverNow: now, series });
+    }
+
+    // добавляем точки строго 1 раз в секунду (lock на текущую секунду)
+    const sec = Math.floor(now / 1000);
+    const lockKey = `${LOCK_PREFIX}${sec}`;
+    const gotLock = await redis.set(lockKey, "1", { nx: true, ex: 5 });
+
+    if (gotLock) {
       const lastTs = series[series.length - 1][0];
-      // добавляем по 1 точке раз в ~1с
+      // если реально пора — добавим
       if (now - lastTs >= 900) {
-        // небольшой “дрейф”
-        lastPrice = lastPrice + rand(-0.35, 0.35);
+        lastPrice = Number(series[series.length - 1][1]) + rand(-0.35, 0.35);
         series.push([now, Number(lastPrice.toFixed(4))]);
-        // храним последние 200 точек
-        if (series.length > 200) series = series.slice(-200);
-      } else {
-        // синхроним lastPrice с последней точкой
-        lastPrice = Number(series[series.length - 1][1]);
+        if (series.length > 240) series = series.slice(-240);
+
+        await redis.set(SERIES_KEY, JSON.stringify(series), { ex: 60 * 60 });
+        await redis.set(LAST_PRICE_KEY, String(lastPrice), { ex: 60 * 60 });
       }
     }
 
-    await redis.set(SERIES_KEY, JSON.stringify(series), { ex: 60 * 60 });
-    await redis.set(LAST_PRICE_KEY, String(lastPrice), { ex: 60 * 60 });
+    // отдаём текущее
+    const raw2 = await redis.get(SERIES_KEY);
+    let series2 = series;
+    if (typeof raw2 === "string" && raw2) {
+      try { series2 = JSON.parse(raw2); } catch {}
+    }
 
-    return res.status(200).json({ serverNow: now, series });
+    return res.status(200).json({ serverNow: now, series: series2 });
   } catch (e) {
     return res.status(500).json({ error: "series_error", message: String(e) });
   }
