@@ -9,7 +9,7 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
 
-  <!-- ✅ Lightweight Charts v4 (фикс под addAreaSeries) -->
+  <!-- Lightweight Charts v4 -->
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     (function(){
@@ -116,7 +116,6 @@
       position: relative;
     }
 
-    /* ✅ шарик на конце линии (HTML overlay) */
     .endOrb{
       position:absolute;
       width:12px;height:12px;border-radius:999px;
@@ -182,7 +181,6 @@
     }
     .chartErrorBox small{display:block; margin-top:8px; font-weight:800; opacity:.75}
 
-    /* Countdown overlay */
     .countdown{
       position:absolute;
       left:50%;
@@ -556,8 +554,8 @@
     overlay.className = "chartError";
     overlay.innerHTML = `
       <div class="chartErrorBox">
-        Ошибка графика: ${String(message || "unknown")}
-        <small>Проверь Network: lightweight-charts@4.2.0 + /api/state + /api/series</small>
+        Ошибка: ${String(message || "unknown")}
+        <small>Проверь: /api/state /api/series + env UPSTASH</small>
       </div>
     `;
     card.appendChild(overlay);
@@ -592,14 +590,28 @@
     const API_BASE = window.API_BASE || location.origin;
     const apiUrl = (path) => new URL(path, API_BASE).toString();
 
+    // ---------------------------
+    // API helpers + backoff
+    // ---------------------------
+    const backoff = {
+      state: 0,  // 0..6
+      series: 0,
+      balance: 0,
+    };
+    function bump(name){ backoff[name] = Math.min(6, (backoff[name] || 0) + 1); }
+    function calm(name){ backoff[name] = Math.max(0, (backoff[name] || 0) - 1); }
+    function delayMs(name, base){
+      // base * (1.6^backoff)
+      return Math.floor(base * Math.pow(1.6, backoff[name] || 0));
+    }
+
     async function apiGet(path){
       const r = await fetch(apiUrl(path), { cache: "no-store" });
       const txt = await r.text();
       let j = null;
       try{ j = JSON.parse(txt); }catch{ j = { raw: txt }; }
       if(!r.ok){
-        console.error("API GET FAIL:", path, r.status, j);
-        throw new Error(path + " " + r.status);
+        throw new Error((j && j.error ? j.error : "http") + " " + r.status + " " + path);
       }
       return j;
     }
@@ -613,15 +625,14 @@
       let j = null;
       try{ j = JSON.parse(txt); }catch{ j = { raw: txt }; }
       if(!r.ok){
-        console.error("API POST FAIL:", path, r.status, j);
-        throw new Error(path + " " + r.status);
+        throw new Error((j && j.error ? j.error : "http") + " " + r.status + " " + path);
       }
       return j;
     }
 
-    // =========================
-    // CHART (smooth + scale fixes + orb)
-    // =========================
+    // ---------------------------
+    // CHART
+    // ---------------------------
     let chart = null;
     let area = null;
     let bound = null;
@@ -629,11 +640,9 @@
     const endOrb = $("endOrb");
     const CHART_H = 360;
 
-    // ✅ фиксированный диапазон
     const MIN_Y = -100;
     const MAX_Y = 200;
 
-    // ✅ цвета серии: зелёный/красный
     function applySeriesColorByValue(v){
       const isGreen = (Number(v) >= 0);
       const line = isGreen ? "rgba(49,209,124,.95)" : "rgba(255,77,77,.95)";
@@ -642,9 +651,7 @@
       try{ area.applyOptions({ lineColor: line, topColor: top, bottomColor: bot }); }catch{}
     }
 
-    // ✅ чтобы шкала была только цифры, без “белых плашек” (плашки были от priceLines axisLabel)
     function addLevelLine(v){
-      // горизонтальная линия без подписи на оси
       return area.createPriceLine({
         price: v,
         color: "rgba(255,255,255,.10)",
@@ -658,12 +665,11 @@
     function normalizeTsToSec(ts){
       const n = Number(ts);
       if(!Number.isFinite(n)) return Math.floor(Date.now()/1000);
-      if(n > 2e12) return Math.floor(n/1000);
+      // backend отдаёт ms
       if(n > 2e10) return Math.floor(n/1000);
       return Math.floor(n);
     }
 
-    // backend отдаёт [[ts,value],...]
     function toChartData(seriesArr){
       const arr = Array.isArray(seriesArr) ? seriesArr : [];
       return arr
@@ -711,17 +717,16 @@
         priceFormat: { type:"custom", formatter: (v) => `${Math.round(Number(v))}%` }
       });
 
-      // ✅ зафиксируем диапазон через “невидимую” bound-серию
       bound = chart.addLineSeries({
         color: "rgba(0,0,0,0)",
         lineWidth: 1,
         lastValueVisible: false,
         priceLineVisible: false,
       });
+
       const now = Math.floor(Date.now()/1000);
       bound.setData([{ time: now-2, value: MIN_Y }, { time: now-1, value: MAX_Y }]);
 
-      // уровни без плашек
       addLevelLine(200);
       addLevelLine(150);
       addLevelLine(100);
@@ -730,7 +735,6 @@
       addLevelLine(-50);
       addLevelLine(-100);
 
-      // ✅ fallback-нитка (чтобы всегда не пусто)
       area.setData([
         { time: now-6, value: 0 },
         { time: now-4, value: 3 },
@@ -739,30 +743,22 @@
       ]);
       applySeriesColorByValue(1);
 
-      let fitted = false;
-
       const ro = new ResizeObserver(() => {
         try{
           const w = Math.max(320, el.clientWidth || 900);
           chart.resize(w, CHART_H);
-          // чтобы orb не “улетал”
           scheduleOrbRecalc();
         }catch{}
       });
       ro.observe(el);
 
-      // один раз fit
       setTimeout(() => {
-        if(!fitted){
-          try{ chart.timeScale().fitContent(); }catch{}
-          fitted = true;
-        }
+        try{ chart.timeScale().fitContent(); }catch{}
       }, 50);
 
       return true;
     }
 
-    // ✅ скрывать/показывать шкалы (во время приема ставок скрываем)
     function setScalesVisible(visible){
       if(!chart) return;
       try{
@@ -773,9 +769,7 @@
       }catch{}
     }
 
-    // =========================
-    // ORB (шарик на конце)
-    // =========================
+    // ORB
     let lastOrbPoint = null;
     let orbRAF = 0;
 
@@ -784,7 +778,6 @@
       const x = chart.timeScale().timeToCoordinate(pt.time);
       const y = area.priceToCoordinate(pt.value);
       if (x == null || y == null) return;
-
       endOrb.style.left = x + "px";
       endOrb.style.top  = y + "px";
       endOrb.style.display = "block";
@@ -797,10 +790,8 @@
       });
     }
 
-    // =========================
-    // Smooth update logic
-    // =========================
-    let cached = [];             // что уже отрисовали
+    // Smooth update logic (без setData каждый тик)
+    let cached = [];
     let lastFitDone = false;
     let anim = { active:false, from:null, to:null, t0:0, dur:260 };
 
@@ -837,18 +828,13 @@
       }
     }
 
-    // обновление без лагов:
-    // - не делаем setData каждый раз
-    // - добавляем только новые точки
-    // - последнюю точку анимируем
     function applySeriesPoints(points){
       if(!chart || !area || !Array.isArray(points) || points.length === 0) return;
 
       ensureBoundNow();
 
-      // первый раз — setData
       if(cached.length === 0){
-        cached = points.slice(-600); // ограничим память
+        cached = points.slice(-600);
         area.setData(cached);
         const last = cached[cached.length-1];
         applySeriesColorByValue(last.value);
@@ -864,14 +850,12 @@
       const lastDrawn = cached[cached.length-1];
       const lastIncoming = points[points.length-1];
 
-      // добавляем новые точки (кроме самой последней — её будем твинить)
       const newOnes = [];
       for (const p of points){
         if (p.time > lastDrawn.time) newOnes.push(p);
       }
 
       if(newOnes.length > 1){
-        // все кроме последней — сразу update
         for (let i=0;i<newOnes.length-1;i++){
           const p = newOnes[i];
           area.update(p);
@@ -879,27 +863,21 @@
         }
       }
 
-      // последнюю точку — твиним, если она новая или обновилась
       const tgt = newOnes.length ? newOnes[newOnes.length-1] : null;
 
       if(tgt){
         const from = cached[cached.length-1];
-        // подменим “последнюю” в кеше на конечную, но рисовать будем плавно
         cached.push(tgt);
         startTween(from, tgt);
       } else if(lastIncoming.time === lastDrawn.time && Number(lastIncoming.value) !== Number(lastDrawn.value)){
-        // если сервер обновляет текущую секунду (редко) — тоже твиним
         cached[cached.length-1] = lastIncoming;
         startTween(lastDrawn, lastIncoming);
       }
 
-      // чистим кеш
       if(cached.length > 800) cached = cached.slice(-650);
     }
 
-    // =========================
     // Countdown
-    // =========================
     const cdEl = $("countdown");
     const cdNumEl = $("cdNum");
     const cdRingEl = $("cdRing");
@@ -981,9 +959,7 @@
       });
     }
 
-    // =========================
-    // Wallet (оставил как у тебя, без изменений по логике)
-    // =========================
+    // Wallet
     let __tonCore = null;
     async function tonCore(){
       if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
@@ -1064,15 +1040,23 @@
       const ton = Number(v) || 0;
       if ($("balTon")) $("balTon").textContent = ton.toFixed(2);
     }
+
+    // ✅ безопасное обновление баланса (не ломаем UI при 500)
     async function refreshBalance(){
-      // демо: сервер может отдавать 0 если не реализовано
       const raw = getWalletRawLS();
       if (!raw){ setBalanceTonUI(0); return 0; }
-      const r = await fetch(apiUrl(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
-      const j = await r.json().catch(()=>({}));
-      const ton = Number(j.balanceTon ?? j.ton ?? 0);
-      if (Number.isFinite(ton)) setBalanceTonUI(ton);
-      return ton;
+
+      try{
+        const data = await apiGet(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`);
+        calm("balance");
+        const ton = Number(data.balanceTon ?? data.ton ?? 0);
+        if (Number.isFinite(ton)) setBalanceTonUI(ton);
+        return ton;
+      }catch(e){
+        bump("balance");
+        // не спамим алертами, просто молча держим старое значение
+        return Number($("balTon")?.textContent || "0") || 0;
+      }
     }
 
     // TON modals
@@ -1141,9 +1125,7 @@
       alert("Депозит подключишь позже (серверная часть).");
     };
 
-    // =========================
     // GAME STATE
-    // =========================
     let currentRound = null;
     let betMs = 7000;
     let roundMs = 19000;
@@ -1165,7 +1147,14 @@
       const b1 = $("btnLong");
       const b2 = $("btnShort");
       if(!b1 || !b2) return;
-      if (on){
+
+      // ✅ без кошелька ставки запрещаем (иначе guest будет играть без баланса)
+      // Если хочешь разрешить guest-ставки — убери проверку walletOk ниже.
+      const walletOk = !!getWalletRawLS();
+
+      const ok = !!on && walletOk;
+
+      if (ok){
         b1.classList.remove("disabled");
         b2.classList.remove("disabled");
         bettingOpen = true;
@@ -1174,11 +1163,21 @@
         b2.classList.add("disabled");
         bettingOpen = false;
       }
+
+      if(on && !walletOk){
+        setHint("Привяжи кошелёк, чтобы делать ставки.");
+      }
     }
 
     async function place(side){
       if(!bettingOpen) return;
-      const raw = getWalletRawLS() || "guest";
+
+      const raw = getWalletRawLS();
+      if(!raw){
+        setHint("Сначала привяжи кошелёк.");
+        return;
+      }
+
       try{
         await apiPost("/api/bet_place?t=" + Date.now(), {
           side,
@@ -1189,6 +1188,7 @@
         pos = { side, amount: selectedAmt, roundId: currentRound.roundId };
         setPosStatus();
         setHint("Ставка принята");
+        await refreshBalance().catch(()=>{});
       }catch(e){
         setHint("Ошибка ставки");
       }
@@ -1206,12 +1206,15 @@
       if (nowS < finishAt) return;
       if (lastSettledRound === pos.roundId) return;
 
-      const raw = getWalletRawLS() || "guest";
+      const raw = getWalletRawLS();
+      if(!raw) return;
+
       try{
         const r = await apiPost("/api/bet_settle?t=" + Date.now(), {
           address: raw,
           roundId: pos.roundId
         });
+
         if (r?.status === "pending") return;
 
         lastSettledRound = pos.roundId;
@@ -1226,11 +1229,13 @@
         pos = null;
         setPosStatus();
         setHint("");
+
+        await refreshBalance().catch(()=>{});
       }catch(e){}
     }
 
-    // ✅ во время приема ставок скрываем шкалу; когда ставок нет — показываем
-    let prevScaleMode = null; // "hide"|"show"
+    // scales during bet
+    let prevScaleMode = null;
     function updateBetCountdown(){
       if(!currentRound || !cdEl || !cdNumEl) return;
 
@@ -1261,7 +1266,6 @@
         cdEl.classList.remove("show");
         setButtonsEnabled(false);
 
-        // показываем шкалу в “торговле” (когда график снова идёт)
         if(prevScaleMode !== "show"){
           setScalesVisible(true);
           prevScaleMode = "show";
@@ -1270,21 +1274,36 @@
     }
 
     async function loadState(){
-      const data = await apiGet("/api/state?t=" + Date.now());
-      timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
-      currentRound = data.round;
-      betMs = data.betMs || 7000;
-      roundMs = data.roundMs || 19000;
-      renderHistory(data.history || []);
+      try{
+        const data = await apiGet("/api/state?t=" + Date.now());
+        calm("state");
+        timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
+        currentRound = data.round;
+        betMs = data.betMs || 7000;
+        roundMs = data.roundMs || 19000;
+        renderHistory(data.history || []);
+        return true;
+      }catch(e){
+        bump("state");
+        return false;
+      }
     }
 
-    // ✅ серии грузим часто, но применяем дёшево (update + tween)
     async function loadSeries(){
-      const data = await apiGet("/api/series?t=" + Date.now());
-      const points = toChartData(data.series);
-      if(!points.length) return;
-      applySeriesPoints(points);
-      clearChartError();
+      try{
+        const data = await apiGet("/api/series?t=" + Date.now());
+        calm("series");
+        const points = toChartData(data.series);
+        if(points.length){
+          applySeriesPoints(points);
+          clearChartError();
+        }
+        return true;
+      }catch(e){
+        bump("series");
+        showChartError("API /api/series недоступен или вернул ошибку.");
+        return false;
+      }
     }
 
     // BOOT
@@ -1297,22 +1316,36 @@
       if(!ok) return;
 
       (async function boot(){
-        try{
-          await loadState().catch(e => console.warn("state err", e));
-          await loadSeries().catch(e => console.warn("series err", e));
-          await syncWalletUI().catch(()=>{});
-          await refreshBalance().catch(()=>{});
-        }catch(e){
-          console.error("BOOT ERROR:", e);
-        }
+        await syncWalletUI().catch(()=>{});
+        await loadState();
+        await loadSeries();
+        await refreshBalance().catch(()=>{});
       })();
 
-      // ✅ интервалы легче: state редко, series часто но лёгкое
-      setInterval(() => loadState().catch(()=>{}), 900);
-      setInterval(() => loadSeries().catch(()=>{}), 220); // плавнее “движение”
+      // ✅ УМНЫЕ циклы вместо setInterval долбёжки:
+      // state: базово 900ms, при ошибках растёт
+      // series: базово 260ms, при ошибках растёт
+      // balance: базово 6500ms, при ошибках растёт
+      (function loopState(){
+        loadState().finally(() => {
+          setTimeout(loopState, delayMs("state", 900));
+        });
+      })();
+
+      (function loopSeries(){
+        loadSeries().finally(() => {
+          setTimeout(loopSeries, delayMs("series", 260));
+        });
+      })();
+
+      (function loopBalance(){
+        refreshBalance().finally(() => {
+          setTimeout(loopBalance, delayMs("balance", 6500));
+        });
+      })();
+
       setInterval(() => updateBetCountdown(), 120);
       setInterval(() => trySettleIfNeeded(), 500);
-      setInterval(() => refreshBalance().catch(()=>{}), 6500);
     });
   });
 })();
