@@ -7,15 +7,12 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-// Настройки раунда
-const BET_MS = 9000;         // окно ставок
-const POST_DELAY_MS = 6000;  // пауза после
-const ROUND_MS = BET_MS + POST_DELAY_MS;
-
-async function getLastPrice() {
-  const p = Number(await redis.get("chart:lastPrice"));
-  return Number.isFinite(p) ? p : 100;
-}
+// РАУНД: 19 сек
+// СТАВКИ: 7 сек
+// ИГРА: 12 сек (не показываем)
+const BET_MS = 7000;
+const PLAY_MS = 12000;
+const ROUND_MS = BET_MS + PLAY_MS;
 
 export default async function handler(req, res) {
   try {
@@ -26,28 +23,14 @@ export default async function handler(req, res) {
     const now = Date.now();
     const roundId = Math.floor(now / ROUND_MS);
     const startAt = roundId * ROUND_MS;
-    const endAt = startAt + BET_MS;
-    const nextAt = startAt + ROUND_MS;
-
-    // фиксируем стартовую цену для раунда (один раз)
-    const startKey = `chart:roundStart:${roundId}`;
-    const exists = await redis.get(startKey);
-    if (!exists) {
-      const p = await getLastPrice();
-      await redis.set(startKey, String(p), { ex: 24 * 60 * 60 });
-    }
+    const endAt = startAt + BET_MS;       // конец ставок
+    const nextAt = startAt + ROUND_MS;    // конец раунда
 
     return res.status(200).json({
       serverNow: now,
-      spinMs: BET_MS,
-      postDelayMs: POST_DELAY_MS,
+      betMs: BET_MS,
       roundMs: ROUND_MS,
-      round: {
-        roundId,
-        startAt,
-        endAt,
-        nextAt
-      },
+      round: { roundId, startAt, endAt, nextAt },
       history: []
     });
   } catch (e) {
