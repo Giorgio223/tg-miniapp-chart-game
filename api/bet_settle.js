@@ -1,5 +1,7 @@
+// api/bet_settle.js
 import { Redis } from "@upstash/redis";
 import { Address } from "@ton/core";
+import { ROUND_MS, roundStartAt, roundEndAt, MIN_Y, MAX_Y } from "../lib/game";
 
 export const config = { runtime: "nodejs" };
 
@@ -8,15 +10,10 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const BET_MS = 7000;
-const PLAY_MS = 12000;
-const ROUND_MS = BET_MS + PLAY_MS;
-
 function canonicalFriendly(addr) {
   const a = Address.parse(String(addr));
   return a.toString({ urlSafe: true, bounceable: false, testOnly: false });
 }
-
 function clamp(x, a, b) {
   return Math.max(a, Math.min(b, x));
 }
@@ -38,9 +35,8 @@ export default async function handler(req, res) {
     if (!Number.isFinite(rid)) return res.status(400).json({ error: "bad_round" });
 
     const now = Date.now();
-    const startAt = rid * ROUND_MS;
-    const finishAt = startAt + ROUND_MS;
-    if (now < finishAt) return res.status(400).json({ error: "too_early" });
+    const finishAt = roundEndAt(rid);
+    if (now < finishAt) return res.status(200).json({ ok: true, status: "pending" });
 
     const betKey = `bet:${rid}:${friendly}`;
     const betRaw = await redis.get(betKey);
@@ -52,36 +48,30 @@ export default async function handler(req, res) {
 
     const bet = JSON.parse(betRaw);
 
-    // результат раунда в процентах лежит тут
-    // его выставляет series.js после завершения раунда
+    // результат лежит тут (выставляет series.js)
     let resultPct = Number(await redis.get(`round:endPct:${rid}`));
-    if (!Number.isFinite(resultPct)) {
-      // если вдруг ещё не успело — считаем pending
-      return res.status(200).json({ ok: true, status: "pending" });
-    }
+    if (!Number.isFinite(resultPct)) return res.status(200).json({ ok: true, status: "pending" });
 
-    resultPct = clamp(resultPct, -100, 100);
+    // ✅ диапазон -100..200
+    resultPct = clamp(resultPct, MIN_Y, MAX_Y);
 
     const side = String(bet.side);
     const stakeNano = Number(bet.amountNano);
 
-    // множитель для ставки:
-    // LONG: +pct = profit, -pct = loss
-    // SHORT: наоборот (profit от минуса)
+    // payout модель как у тебя: return = stake * (1 + m), где m = pct/100
     const m = (side === "long" ? resultPct : -resultPct) / 100;
 
-    // сколько вернуть на баланс (ставка уже списана при place)
     let returnNano = Math.floor(stakeNano * (1 + m));
     if (!Number.isFinite(returnNano) || returnNano < 0) returnNano = 0;
 
-    // начисляем возврат
     const balKey = `bal:${friendly}`;
     const curBal = Number(await redis.get(balKey) || "0");
-    await redis.set(balKey, String(curBal + returnNano));
+    await redis.set(balKey, String((Number.isFinite(curBal) ? curBal : 0) + returnNano));
 
     await redis.set(settledKey, "1", { ex: 24 * 60 * 60 });
 
-    const deltaNano = returnNano - stakeNano; // чистая прибыль/убыток
+    const deltaNano = returnNano - stakeNano;
+
     return res.status(200).json({
       ok: true,
       status: "settled",
