@@ -7,9 +7,7 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-// РАУНД: 19 сек
-// СТАВКИ: 7 сек
-// ИГРА: 12 сек (не показываем)
+// 19 сек раунд: 7 сек ставки + 12 сек игра
 const BET_MS = 7000;
 const PLAY_MS = 12000;
 const ROUND_MS = BET_MS + PLAY_MS;
@@ -23,15 +21,23 @@ export default async function handler(req, res) {
     const now = Date.now();
     const roundId = Math.floor(now / ROUND_MS);
     const startAt = roundId * ROUND_MS;
-    const endAt = startAt + BET_MS;       // конец ставок
-    const nextAt = startAt + ROUND_MS;    // конец раунда
+    const endAt = startAt + BET_MS;     // конец ставок
+    const nextAt = startAt + ROUND_MS;  // конец раунда
+
+    // История раундов (последние ~18)
+    const history = (await redis.lrange("round:history", 0, 17)) || [];
+    const parsed = history
+      .map((x) => {
+        try { return JSON.parse(x); } catch { return null; }
+      })
+      .filter(Boolean);
 
     return res.status(200).json({
       serverNow: now,
       betMs: BET_MS,
       roundMs: ROUND_MS,
       round: { roundId, startAt, endAt, nextAt },
-      history: []
+      history: parsed
     });
   } catch (e) {
     return res.status(500).json({ error: "state_error", message: String(e) });
