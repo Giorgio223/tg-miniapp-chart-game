@@ -8,9 +8,9 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const BET_MS = 9000;
-const POST_DELAY_MS = 6000;
-const ROUND_MS = BET_MS + POST_DELAY_MS;
+const BET_MS = 7000;
+const PLAY_MS = 12000;
+const ROUND_MS = BET_MS + PLAY_MS;
 
 function canonicalFriendly(addr) {
   const a = Address.parse(String(addr));
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     if (s !== "long" && s !== "short") return res.status(400).json({ error: "bad_side" });
 
     const amountNano = toNano(amountTon);
-    if (!amountNano || amountNano <= 0) return res.status(400).json({ error: "bad_amount" });
+    if (!amountNano) return res.status(400).json({ error: "bad_amount" });
 
     let friendly = "";
     try { friendly = canonicalFriendly(address); }
@@ -48,9 +48,8 @@ export default async function handler(req, res) {
 
     const rid = Number(roundId);
     if (!Number.isFinite(rid) || rid !== curRound) return res.status(400).json({ error: "bad_round" });
-    if (now >= endAt) return res.status(400).json({ error: "round_closed" });
+    if (now >= endAt) return res.status(400).json({ error: "bets_closed" });
 
-    // один бет на раунд
     const betKey = `bet:${rid}:${friendly}`;
     const already = await redis.get(betKey);
     if (already) return res.status(400).json({ error: "already_placed" });
@@ -59,7 +58,6 @@ export default async function handler(req, res) {
     const curBal = Number(await redis.get(balKey) || "0");
     if (!Number.isFinite(curBal) || curBal < amountNano) return res.status(400).json({ error: "insufficient" });
 
-    // списываем
     await redis.set(balKey, String(curBal - amountNano));
 
     const bet = {
@@ -67,13 +65,11 @@ export default async function handler(req, res) {
       address: friendly,
       side: s,
       amountNano,
-      amountTon: amountNano / 1e9,
       placedAt: now
     };
 
     await redis.set(betKey, JSON.stringify(bet), { ex: 24 * 60 * 60 });
-
-    return res.status(200).json({ ok: true, bet });
+    return res.status(200).json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: "bet_place_error", message: String(e) });
   }
