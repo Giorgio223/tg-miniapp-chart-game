@@ -1,21 +1,35 @@
 export const config = { runtime: "nodejs" };
 
-import { BET_MS, ROUND_MS, getRoundMeta, pushHistoryIfFinished, redis } from "../lib/game.js";
+import { getRedis } from "../lib/redis.js";
+import { BET_MS, ROUND_MS, getRoundMeta } from "../lib/game.js";
 
 export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "application/json");
+
+  let redis;
   try {
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Type", "application/json");
+    redis = getRedis();
+  } catch (e) {
+    return res.status(500).json({ error: "redis_init_failed", message: String(e.message || e) });
+  }
+
+  try {
+    if (req.method !== "GET") return res.status(405).json({ error: "method" });
 
     const now = Date.now();
-    const round = await getRoundMeta(now);
-    await pushHistoryIfFinished(round, now);
+    const round = getRoundMeta(now);
 
-    const hist = await redis.lrange("game:history", 0, 11);
-    const history = (hist || []).map(s => {
-      const [rid, pct] = String(s).split(":");
-      return { roundId: Number(rid), pct: Number(pct) };
-    });
+    // берём историю, которую пишет series.js в round:history
+    const rows = await redis.lrange("round:history", 0, 11);
+    const history = (rows || []).map((s) => {
+      try {
+        const j = JSON.parse(String(s));
+        return { roundId: Number(j.roundId), pct: Number(j.pct) };
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
 
     res.json({
       serverNow: now,
@@ -24,8 +38,8 @@ export default async function handler(req, res) {
       round: {
         roundId: round.roundId,
         startAt: round.startAt,
-        endAt: round.endAt,
-        nextAt: round.nextAt
+        endAt: round.endAt,   // конец ставки (BET)
+        nextAt: round.nextAt  // конец раунда (finish)
       },
       history
     });
