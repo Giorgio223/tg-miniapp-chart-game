@@ -9,22 +9,21 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
 
-  <!-- Lightweight Charts (основной) -->
-  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-  <!-- Lightweight Charts (резервный CDN, если unpkg блокируется) -->
+  <!-- ✅ Lightweight Charts FIXED VERSION (v4.2.0) -->
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+
+  <!-- ✅ Fallback (если unpkg блокируется) -->
   <script>
     (function(){
       function loadFallback(){
-        // jsdelivr fallback
         var s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/lightweight-charts/dist/lightweight-charts.standalone.production.js";
+        s.src = "https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js";
         s.async = true;
         document.head.appendChild(s);
       }
-      // если unpkg не загрузился за 1500мс — пробуем fallback
       setTimeout(function(){
         if (!window.LightweightCharts) loadFallback();
-      }, 1500);
+      }, 1200);
     })();
   </script>
 
@@ -119,7 +118,6 @@
       background: radial-gradient(900px 520px at 50% 0%, rgba(124,77,255,.30), rgba(124,77,255,.08) 45%, rgba(0,0,0,.10) 70%);
     }
 
-    /* overlay for chart errors */
     .chartError{
       position:absolute; inset:0;
       display:flex; align-items:center; justify-content:center;
@@ -142,7 +140,6 @@
     }
     .chartErrorBox small{display:block; margin-top:8px; font-weight:800; opacity:.75}
 
-    /* Countdown circle overlay */
     .countdown{
       position:absolute;
       left:50%;
@@ -175,7 +172,6 @@
       text-transform: uppercase;
     }
 
-    /* History overlay bottom-left */
     .historyWrap{
       position:absolute;
       left:14px;
@@ -228,7 +224,6 @@
     .tri.down::after{ top:-11px; border-top: 9px solid rgba(255,255,255,.92); }
     .pctText{ min-width: 42px; text-align:right; }
 
-    /* Result toast */
     .toast{
       position:absolute;
       right:14px;
@@ -249,7 +244,6 @@
     .toast.win{border-color: rgba(49,209,124,.35);}
     .toast.lose{border-color: rgba(255,77,77,.35);}
 
-    /* Bet panel */
     .betWrap{padding:12px;}
     .amountGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}
     .chip{
@@ -282,7 +276,6 @@
     }
     .hint{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.35;min-height:34px;}
 
-    /* BONUS sheet */
     .bonusOverlay{
       position: fixed; inset: 0; background: rgba(0,0,0,.62);
       display:none;align-items:flex-end;justify-content:center;padding:14px;
@@ -303,7 +296,6 @@
     .bonusHead .t{font-weight:1100;letter-spacing:.3px;text-transform:uppercase;font-size:12px;color:var(--text);}
     .bonusBody{padding:12px;color:var(--muted);line-height:1.45;font-size:13px;}
 
-    /* TON modal */
     .modalOverlay{
       position:fixed; inset:0;
       background: rgba(0,0,0,.55);
@@ -384,11 +376,9 @@
     </div>
 
     <div class="grid">
-      <!-- Chart card -->
       <div class="card" id="chartCard">
         <div id="chart"></div>
 
-        <!-- Countdown overlay -->
         <div class="countdown" id="countdown">
           <svg width="112" height="112" viewBox="0 0 112 112">
             <defs>
@@ -409,16 +399,13 @@
           <div class="cdSub">BET</div>
         </div>
 
-        <!-- History overlay -->
         <div class="historyWrap">
           <div class="histRow" id="histRow"></div>
         </div>
 
-        <!-- Result toast -->
         <div class="toast" id="toast"></div>
       </div>
 
-      <!-- Bet card -->
       <div class="card">
         <div class="betWrap">
           <div class="amountGrid" id="chips">
@@ -453,20 +440,16 @@
     </div>
   </div>
 
-  <!-- BONUS -->
   <div class="bonusOverlay" id="bonusOverlay">
     <div class="bonusSheet">
       <div class="bonusHead">
         <div class="t">BONUS</div>
         <button class="btn ghost" id="btnBonusClose">Закрыть</button>
       </div>
-      <div class="bonusBody">
-        Тут будет бонусная система. Функцию добавим позже.
-      </div>
+      <div class="bonusBody">Тут будет бонусная система. Функцию добавим позже.</div>
     </div>
   </div>
 
-  <!-- TON SHEET -->
   <div class="modalOverlay" id="tonModal">
     <div class="sheet">
       <div class="sheetHeader">
@@ -495,7 +478,6 @@
     </div>
   </div>
 
-  <!-- DEPOSIT INPUT -->
   <div class="modalOverlay" id="depositModal">
     <div class="sheet">
       <div class="sheetHeader">
@@ -523,7 +505,6 @@
   function showChartError(message){
     const card = $("chartCard");
     if(!card) return;
-    // удаляем предыдущую
     const old = card.querySelector(".chartError");
     if(old) old.remove();
 
@@ -532,12 +513,11 @@
     overlay.innerHTML = `
       <div class="chartErrorBox">
         Ошибка графика: ${String(message || "unknown")}
-        <small>Открой DevTools → Network и проверь загрузку lightweight-charts (unpkg/jsdelivr) и ответы /api/state /api/series.</small>
+        <small>DevTools → Network: проверь загрузку lightweight-charts@4.2.0 и ответы /api/state /api/series.</small>
       </div>
     `;
     card.appendChild(overlay);
   }
-
   function clearChartError(){
     const card = $("chartCard");
     if(!card) return;
@@ -545,12 +525,27 @@
     if(old) old.remove();
   }
 
-  // Ждём полной загрузки окна (важно для размеров контейнера)
+  // ✅ ждём пока библиотека реально появится (unpkg или fallback)
+  function waitForLW(cb){
+    let tries = 0;
+    const t = setInterval(() => {
+      if (window.LightweightCharts && window.LightweightCharts.createChart){
+        clearInterval(t);
+        cb();
+        return;
+      }
+      tries++;
+      if (tries > 40){
+        clearInterval(t);
+        showChartError("LightweightCharts не загрузился (CDN блок / сеть).");
+      }
+    }, 150);
+  }
+
   window.addEventListener("load", () => {
     const tg = window.Telegram?.WebApp;
     try { tg?.ready?.(); tg?.expand?.(); } catch {}
 
-    // ✅ Абсолютный API base
     const API_BASE = window.API_BASE || location.origin;
     const apiUrl = (path) => new URL(path, API_BASE).toString();
 
@@ -583,41 +578,37 @@
     }
 
     // =========================
-    // CHART (100% не пустой + fallback + area + resize)
+    // CHART
     // =========================
     let chart = null;
     let area = null;
-    let didSetAnyData = false;
 
     function normalizeTsToSec(ts){
       const n = Number(ts);
       if(!Number.isFinite(n)) return Math.floor(Date.now()/1000);
-      if(n > 2e12) return Math.floor(n/1000); // ms
-      return Math.floor(n); // sec
+      if(n > 2e12) return Math.floor(n/1000);
+      if(n > 2e10) return Math.floor(n/1000);
+      return Math.floor(n);
     }
     function toChartData(seriesArr){
       const arr = Array.isArray(seriesArr) ? seriesArr : [];
       return arr
-        .map(([ts, pct]) => ({ time: normalizeTsToSec(ts), value: Number(pct) }))
+        .map((x) => {
+          const ts = Array.isArray(x) ? x[0] : x?.time ?? x?.ts;
+          const pct = Array.isArray(x) ? x[1] : x?.value ?? x?.pct;
+          return ({ time: normalizeTsToSec(ts), value: Number(pct) });
+        })
         .filter(p => Number.isFinite(p.time) && Number.isFinite(p.value))
         .sort((a,b) => a.time - b.time);
     }
 
-    function initChartOrError(){
-      // ждём, пока LightweightCharts реально появился (unpkg или fallback jsdelivr)
-      if(!window.LightweightCharts?.createChart){
-        showChartError("LightweightCharts не загрузился (CDN заблокирован или ошибка сети).");
-        return false;
-      }
-
+    function initChart(){
       const el = $("chart");
       if(!el){ showChartError("Не найден элемент #chart"); return false; }
 
-      // чистим
       el.innerHTML = "";
       clearChartError();
 
-      // НЕ autoSize (иногда 0x0): задаём размеры + resize observer
       const W = Math.max(320, el.clientWidth || 900);
       const H = 360;
 
@@ -635,7 +626,6 @@
         crosshair: { vertLine: { color: "rgba(124,77,255,.45)" }, horzLine: { color: "rgba(124,77,255,.35)" } }
       });
 
-      // ✅ как на казино: area
       area = chart.addAreaSeries({
         lineWidth: 2,
         lineColor: "rgba(49,209,124,.95)",
@@ -644,7 +634,6 @@
         priceFormat: { type:"custom", formatter: (v) => `${Number(v).toFixed(0)}%` }
       });
 
-      // фикс шкалы -100..100
       const bound = chart.addLineSeries({
         color: "rgba(0,0,0,0)",
         lineWidth: 1,
@@ -654,7 +643,6 @@
       const now = Math.floor(Date.now()/1000);
       bound.setData([{ time: now-2, value:-100 }, { time: now-1, value:100 }]);
 
-      // уровни
       const mkPL = (v,t) => area.createPriceLine({
         price: v,
         color: "rgba(255,255,255,.14)",
@@ -669,7 +657,7 @@
       mkPL(-50,"-50%");
       mkPL(-100,"-100%");
 
-      // ✅ fallback — график точно виден
+      // ✅ fallback чтобы график всегда был виден
       area.setData([
         { time: now-6, value: 0 },
         { time: now-4, value: 6 },
@@ -677,9 +665,7 @@
         { time: now, value: 2 }
       ]);
       chart.timeScale().fitContent();
-      didSetAnyData = true;
 
-      // resize observer
       const ro = new ResizeObserver(() => {
         try{
           const w = Math.max(320, el.clientWidth || 900);
@@ -692,19 +678,17 @@
     }
 
     // =========================
-    // Countdown (без изменений, но надёжно)
+    // Countdown
     // =========================
     const cdEl = $("countdown");
     const cdNumEl = $("cdNum");
     const cdRingEl = $("cdRing");
-
     const R = 46;
     const CIRC = 2 * Math.PI * R;
     if (cdRingEl){
       cdRingEl.setAttribute("stroke-dasharray", String(CIRC));
       cdRingEl.setAttribute("stroke-dashoffset", "0");
     }
-
     function setRing(progress01){
       if(!cdRingEl) return;
       const off = CIRC * (1 - Math.max(0, Math.min(1, progress01)));
@@ -755,9 +739,7 @@
       }, 1500);
     }
 
-    // =========================
-    // UI: BONUS
-    // =========================
+    // BONUS
     const bonusOverlay = $("bonusOverlay");
     if ($("btnBonus")) $("btnBonus").onclick = () => bonusOverlay.style.display = "flex";
     if ($("btnBonusClose")) $("btnBonusClose").onclick = () => bonusOverlay.style.display = "none";
@@ -765,9 +747,7 @@
       if(e.target === bonusOverlay) bonusOverlay.style.display = "none";
     });
 
-    // =========================
-    // UI: Chips
-    // =========================
+    // Chips
     let selectedAmt = 0.10;
     if ($("chips")) {
       $("chips").addEventListener("click", (e) => {
@@ -781,7 +761,7 @@
     }
 
     // =========================
-    // Wallet/balance/deposit (оставлено, но deposit_resume ОТКЛЮЧЕН)
+    // Wallet helpers (как было)
     // =========================
     let __tonCore = null;
     async function tonCore(){
@@ -889,7 +869,7 @@
       return ton;
     }
 
-    // ✅ ОТКЛЮЧЕНО — у тебя это красное. Включишь после фикса сервера.
+    // deposit_resume отключён
     async function resumeDepositsSilently(){ return; }
 
     async function confirmDepositTry(intentId, addressRaw){
@@ -1146,57 +1126,42 @@
       const data = await apiGet("/api/series?t=" + Date.now());
       const points = toChartData(data.series);
 
-      // если API пустой — оставляем fallback, чтобы не было пусто
       if(!points.length) return;
 
-      // первый раз можно setData
       area.setData(points);
       chart.timeScale().fitContent();
-      didSetAnyData = true;
       clearChartError();
     }
 
-    // ===== BOOT (самое важное) =====
-    // 1) Попробовать создать график (с fallback), даже если API сломан.
-    // 2) Если не создался — покажем ошибку поверх.
-    // 3) Затем грузим state/series (если есть).
-    const ok = initChartOrError();
-
+    // =========================
+    // BOOT: ждём LW и стартуем
+    // =========================
     setPosStatus();
     setHint("");
     setButtonsEnabled(false);
 
-    (async function boot(){
-      try{
-        if(ok){
-          // state/series могут падать — график всё равно не пустой (fallback)
+    waitForLW(() => {
+      const ok = initChart();
+      if(!ok) return;
+
+      (async function boot(){
+        try{
           await loadState().catch(e => console.warn("state err", e));
           await loadSeries().catch(e => console.warn("series err", e));
+          await syncWalletUI().catch(()=>{});
+          await refreshBalance().catch(()=>{});
+        }catch(e){
+          console.error("BOOT ERROR:", e);
         }
-        await syncWalletUI().catch(()=>{});
-        await refreshBalance().catch(()=>{});
-      }catch(e){
-        console.error("BOOT ERROR:", e);
-      }
-    })();
+      })();
 
-    // Периодические обновления
-    setInterval(() => { if(ok) loadState().catch(e => console.warn("state err", e)); }, 800);
-    setInterval(() => { if(ok) loadSeries().catch(e => console.warn("series err", e)); }, 1200);
-    setInterval(() => updateBetCountdown(), 120);
-    setInterval(() => trySettleIfNeeded(), 600);
-    setInterval(() => refreshBalance().catch(()=>{}), 6500);
+      setInterval(() => loadState().catch(e => console.warn("state err", e)), 800);
+      setInterval(() => loadSeries().catch(e => console.warn("series err", e)), 1200);
+      setInterval(() => updateBetCountdown(), 120);
+      setInterval(() => trySettleIfNeeded(), 600);
+      setInterval(() => refreshBalance().catch(()=>{}), 6500);
+    });
 
-    // Если график не создался из-за CDN — попробуем ещё раз через 2 секунды (fallback CDN мог догрузиться)
-    if(!ok){
-      setTimeout(() => {
-        const ok2 = initChartOrError();
-        if(ok2){
-          loadState().catch(()=>{});
-          loadSeries().catch(()=>{});
-        }
-      }, 2200);
-    }
   });
 })();
 </script>
