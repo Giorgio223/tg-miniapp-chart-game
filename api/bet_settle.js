@@ -1,59 +1,78 @@
-import { Redis } from "@upstash/redis";
-import { Address } from "@ton/core";
-import { roundEndAt, MIN_Y, MAX_Y } from "../lib/game";
-
 export const config = { runtime: "nodejs" };
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+import { Address } from "@ton/core";
+import { getRedis } from "../lib/redis.js";
+import { roundEndAt, MIN_Y, MAX_Y, clamp } from "../lib/game.js";
 
-const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+function normalizeUser(address) {
+  const a = String(address || "").trim();
+  if (!a) return null;
+  if (a === "guest") return "guest";
+  const parsed = Address.parse(a);
+  return parsed.toString({ urlSafe: true, bounceable: false, testOnly: false });
+}
 
 export default async function handler(req, res) {
-  try {
-    if (req.method !== "POST") return res.status(405).end();
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "application/json");
 
-    const { address, roundId } = req.body;
-    const friendly = Address.parse(address).toString({ urlSafe: true, bounceable: false });
+  let redis;
+  try {
+    redis = getRedis();
+  } catch (e) {
+    return res.status(500).json({ error: "redis_init_failed", message: String(e.message || e) });
+  }
+
+  try {
+    if (req.method !== "POST") return res.status(405).json({ error: "method" });
+
+    const { address, roundId } = req.body || {};
+
+    const user = normalizeUser(address);
+    if (!user) return res.status(400).json({ error: "bad_address" });
+
+    const rid = Number(roundId);
+    if (!Number.isFinite(rid)) return res.status(400).json({ error: "bad_round" });
 
     const now = Date.now();
-    if (now < roundEndAt(roundId))
-      return res.json({ ok: true, status: "pending" });
+    if (now < roundEndAt(rid)) return res.json({ ok: true, status: "pending" });
 
-    const settledKey = `settled:${roundId}:${friendly}`;
-    if (await redis.get(settledKey))
-      return res.json({ ok: true, status: "already_settled" });
-
-    const betRaw = await redis.get(`bet:${roundId}:${friendly}`);
+    const betKey = `bet:${rid}:${user}`;
+    const betRaw = await redis.get(betKey);
     if (!betRaw) return res.status(404).json({ error: "no_bet" });
 
-    let pct = Number(await redis.get(`round:endPct:${roundId}`));
-    if (!Number.isFinite(pct)) return res.json({ ok: true, status: "pending" });
+    const settledKey = `settled:${rid}:${user}`;
+    if (await redis.get(settledKey)) return res.json({ ok: true, status: "already_settled" });
 
+    // результат раунда выставляет series.js
+    let pct = Number(await redis.get(`round:endPct:${rid}`));
+    if (!Number.isFinite(pct)) return res.json({ ok: true, status: "pending" });
     pct = clamp(pct, MIN_Y, MAX_Y);
 
     const bet = JSON.parse(betRaw);
-    const stake = Number(bet.amountNano);
-    const m = (bet.side === "long" ? pct : -pct) / 100;
+    const side = String(bet.side);
+    const stakeNano = Number(bet.amountNano);
 
-    let ret = Math.floor(stake * (1 + m));
-    if (ret < 0) ret = 0;
+    const m = (side === "long" ? pct : -pct) / 100;
+    let returnNano = Math.floor(stakeNano * (1 + m));
+    if (!Number.isFinite(returnNano) || returnNano < 0) returnNano = 0;
 
-    const balKey = `bal:${friendly}`;
-    const bal = Number(await redis.get(balKey) || 0);
-    await redis.set(balKey, String(bal + ret));
-    await redis.set(settledKey, "1", { ex: 86400 });
+    const balKey = `bal:${user}`;
+    let bal = Number(await redis.get(balKey) || "0");
+    if (!Number.isFinite(bal)) bal = 0;
+    await redis.set(balKey, String(bal + returnNano));
 
-    res.json({
+    await redis.set(settledKey, "1", { ex: 24 * 60 * 60 });
+
+    return res.json({
       ok: true,
       status: "settled",
       pct,
-      returnedTon: ret / 1e9,
-      profitTon: (ret - stake) / 1e9
+      side,
+      returnedTon: returnNano / 1e9,
+      profitTon: (returnNano - stakeNano) / 1e9
     });
   } catch (e) {
-    res.status(500).json({ error: "bet_settle_error", message: String(e) });
+    return res.status(500).json({ error: "bet_settle_error", message: String(e) });
   }
 }
