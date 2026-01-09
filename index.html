@@ -8,13 +8,14 @@
   <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
+  <!-- TonConnect UI (как в прошлом проекте) -->
+  <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
+
   <!-- Chart -->
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 
   <style>
     :root{
-      --bg:#0b0614;
-      --panel:#120824;
       --stroke:rgba(255,255,255,.10);
       --text:#f2efff;
       --muted:rgba(242,239,255,.65);
@@ -25,7 +26,6 @@
       --shadow: 0 16px 60px rgba(0,0,0,.55);
       --radius: 16px;
     }
-
     *{box-sizing:border-box}
     html,body{height:100%}
     body{
@@ -39,37 +39,19 @@
       color:var(--text);
       overflow-x:hidden;
     }
+    .wrap{max-width:1040px;margin:0 auto;padding:12px 12px 22px;}
 
-    .wrap{
-      max-width: 1040px;
-      margin: 0 auto;
-      padding: 12px 12px 22px;
-    }
-
-    /* Top bar */
     .topbar{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      padding: 10px 12px;
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      padding:10px 12px;
       background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
       border:1px solid var(--stroke);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      position: sticky;
-      top: 10px;
-      z-index: 50;
+      position: sticky; top: 10px; z-index: 50;
       backdrop-filter: blur(10px);
     }
-
-    .brand{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      min-width: 0;
-    }
-
+    .brand{display:flex;align-items:center;gap:10px;min-width:0;}
     .logo{
       width:34px;height:34px;border-radius:12px;
       background: radial-gradient(circle at 30% 30%, rgba(124,77,255,.9), rgba(124,77,255,.25)),
@@ -77,30 +59,17 @@
       border:1px solid rgba(255,255,255,.18);
       box-shadow: 0 10px 25px rgba(124,77,255,.25);
     }
-
-    .rightbar{
-      display:flex; align-items:center; gap:10px;
-      flex-wrap: wrap;
-      justify-content:flex-end;
-    }
+    .rightbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
 
     .btn{
-      appearance:none;
-      border:none;
-      cursor:pointer;
-      border-radius: 12px;
-      padding: 10px 12px;
-      font-weight: 900;
-      font-size: 12px;
-      letter-spacing:.2px;
-      color: var(--text);
+      appearance:none;border:none;cursor:pointer;
+      border-radius:12px;padding:10px 12px;
+      font-weight:900;font-size:12px;letter-spacing:.2px;
+      color:var(--text);
       background: rgba(255,255,255,.06);
       border:1px solid rgba(255,255,255,.12);
-      transition: transform .06s ease, filter .2s ease, background .2s ease;
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      white-space: nowrap;
+      transition: transform .06s ease, background .2s ease;
+      display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
     }
     .btn:active{transform: translateY(1px) scale(.99)}
     .btn.primary{
@@ -113,42 +82,11 @@
       border:1px solid rgba(255,157,46,.75);
       box-shadow: 0 12px 30px rgba(255,157,46,.20);
     }
-    .btn.ghost{
-      background: rgba(0,0,0,.18);
-    }
+    .btn.ghost{background: rgba(0,0,0,.18);}
+    .tonIcon{width:18px;height:18px;object-fit:contain;display:block;filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));}
 
-    .tonIcon{
-      width:18px;height:18px;
-      object-fit: contain;
-      display:block;
-      filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));
-    }
-
-    .pill{
-      display:flex;
-      align-items:center;
-      gap:8px;
-      padding: 8px 10px;
-      border-radius: 999px;
-      border:1px solid var(--stroke);
-      background: rgba(0,0,0,.18);
-      font-size:12px;
-      color: var(--muted);
-      white-space: nowrap;
-    }
-    .pill strong{color:var(--text); font-weight:1000}
-
-    /* Main layout */
-    .grid{
-      margin-top: 12px;
-      display:grid;
-      grid-template-columns: 1.2fr .8fr;
-      gap: 12px;
-    }
-    @media (max-width: 860px){
-      .grid{grid-template-columns: 1fr}
-      .topbar{position: static}
-    }
+    .grid{margin-top:12px;display:grid;grid-template-columns:1.2fr .8fr;gap:12px;}
+    @media (max-width:860px){ .grid{grid-template-columns:1fr} .topbar{position:static} }
 
     .card{
       border-radius: var(--radius);
@@ -158,82 +96,35 @@
       overflow:hidden;
     }
 
-    /* Chart */
     .chartHead{
-      padding: 12px 12px 8px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
+      padding:12px 12px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px;
       background: linear-gradient(180deg, rgba(0,0,0,.18), transparent);
       border-bottom: 1px solid rgba(255,255,255,.06);
     }
-    .pair{
-      display:flex;
-      flex-direction:column;
-      gap:2px;
-      min-width:0;
-    }
-    .pair .t{
-      font-size:12px;
-      color: var(--muted);
-      font-weight:800;
-    }
-    .pair .v{
-      font-size:14px;
-      font-weight:1100;
-      letter-spacing:.2px;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-    .stats{
-      display:flex; align-items:center; gap:10px;
-      flex-wrap: wrap;
-      justify-content:flex-end;
-    }
+    .pair{display:flex;flex-direction:column;gap:2px;min-width:0;}
+    .pair .t{font-size:12px;color:var(--muted);font-weight:800;}
+    .pair .v{font-size:14px;font-weight:1100;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .stats{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
     .stat{
-      padding:6px 10px;
-      border-radius:999px;
-      border:1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.18);
-      font-size:11px;
-      color: var(--muted);
+      padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);font-size:11px;color:var(--muted);
     }
     .stat b{color:var(--text)}
     #chart{
-      height: 360px;
+      height:360px;
       background: radial-gradient(900px 520px at 50% 0%, rgba(124,77,255,.30), rgba(124,77,255,.08) 45%, rgba(0,0,0,.10) 70%);
     }
 
-    /* Right panel (bet) */
-    .betWrap{ padding: 12px; }
+    .betWrap{padding:12px;}
     .sectionTitle{
-      font-size: 12px;
-      font-weight: 1100;
-      letter-spacing:.35px;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin: 2px 0 10px;
+      font-size:12px;font-weight:1100;letter-spacing:.35px;text-transform:uppercase;color:var(--muted);
+      margin:2px 0 10px;
     }
-
-    .amountGrid{
-      display:grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap:8px;
-      margin-bottom: 10px;
-    }
+    .amountGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}
     .chip{
-      padding: 10px 10px;
-      border-radius: 12px;
-      border:1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.18);
-      color: var(--text);
-      font-weight: 1000;
-      font-size: 12px;
-      cursor:pointer;
-      text-align:center;
-      user-select:none;
+      padding:10px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);color:var(--text);font-weight:1000;font-size:12px;
+      cursor:pointer;text-align:center;user-select:none;
     }
     .chip.active{
       border-color: rgba(255,157,46,.65);
@@ -242,24 +133,13 @@
     }
 
     .bigBox{
-      padding: 12px;
-      border-radius: 16px;
-      border:1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.22);
-      margin-bottom: 10px;
+      padding:12px;border-radius:16px;border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.22);margin-bottom:10px;
     }
-    .bigBox .label{
-      font-size:11px;color:var(--muted);font-weight:900;
-      text-transform:uppercase; letter-spacing:.25px
-    }
+    .bigBox .label{font-size:11px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.25px}
     .bigBox .value{font-size:18px;font-weight:1150;margin-top:6px}
 
-    .actions{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:10px;
-      margin-top: 10px;
-    }
+    .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
     .btnLong{
       background: linear-gradient(180deg, rgba(49,209,124,.95), rgba(49,209,124,.50));
       border:1px solid rgba(49,209,124,.70);
@@ -270,40 +150,25 @@
       border:1px solid rgba(255,77,77,.70);
       box-shadow: 0 14px 34px rgba(255,77,77,.18);
     }
-
-    .hint{
-      margin-top: 10px;
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.35;
-    }
-
+    .hint{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.35;}
     .strip{
-      margin-top: 12px;
-      padding: 10px 12px;
-      border-radius: var(--radius);
+      margin-top:12px;padding:10px 12px;border-radius: var(--radius);
       border:1px solid rgba(255,255,255,.10);
       background: linear-gradient(180deg, rgba(0,0,0,.22), rgba(255,255,255,.03));
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      flex-wrap: wrap;
+      display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
     }
+    .pill{
+      display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;
+      border:1px solid var(--stroke);background: rgba(0,0,0,.18);font-size:12px;color:var(--muted);
+    }
+    .pill strong{color:var(--text);font-weight:1000}
+    .mono{font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1;}
 
-    .mono{font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;}
-
-    /* Bonus overlay */
+    /* BONUS bottom sheet */
     .bonusOverlay{
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,.62);
-      display:none;
-      align-items:flex-end;
-      justify-content:center;
-      padding: 14px;
-      z-index: 200;
-      backdrop-filter: blur(8px);
+      position: fixed; inset: 0; background: rgba(0,0,0,.62);
+      display:none;align-items:flex-end;justify-content:center;padding:14px;
+      z-index:200;backdrop-filter: blur(8px);
     }
     .bonusSheet{
       width: min(560px, 100%);
@@ -314,26 +179,70 @@
       overflow:hidden;
     }
     .bonusHead{
-      padding: 12px 12px 10px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      border-bottom:1px solid rgba(255,255,255,.08);
+      padding: 12px 12px 10px;display:flex;align-items:center;justify-content:space-between;
+      border-bottom:1px solid rgba(255,255,255,.08);background: rgba(0,0,0,.18);
+    }
+    .bonusHead .t{font-weight:1100;letter-spacing:.3px;text-transform:uppercase;font-size:12px;color:var(--text);}
+    .bonusBody{padding:12px;color:var(--muted);line-height:1.45;font-size:13px;}
+
+    /* TON modal (bottom sheet) */
+    .modalOverlay{
+      position:fixed; inset:0;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(6px);
+      display:none;
+      align-items:flex-end;
+      justify-content:center;
+      z-index:220;
+      padding:14px;
+    }
+    .modalOverlay.open{ display:flex; }
+    .sheet{
+      width:min(560px, 100%);
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.12);
+      background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(0,0,0,.22));
+      box-shadow: 0 26px 90px rgba(0,0,0,.65);
+      overflow:hidden;
+    }
+    .sheetHeader{
+      padding:12px;
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      border-bottom:1px solid rgba(255,255,255,.10);
       background: rgba(0,0,0,.18);
     }
-    .bonusHead .t{
-      font-weight:1100;
-      letter-spacing:.3px;
-      text-transform: uppercase;
-      font-size: 12px;
+    .sheetTitle{display:flex;align-items:center;gap:10px;font-weight:1100;letter-spacing:.3px;text-transform:uppercase;font-size:12px;}
+    .sheetTitle img{width:22px;height:22px;border-radius:8px;}
+    .closeBtn{
+      width:42px;height:42px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
       color: var(--text);
+      cursor:pointer;font-weight:1100;
     }
-    .bonusBody{
-      padding: 12px;
-      color: var(--muted);
-      line-height: 1.45;
-      font-size: 13px;
+    .sheetBtns{padding:12px;display:flex;flex-direction:column;gap:10px;}
+    .sheetAction{
+      height:54px;border-radius:16px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      box-shadow: 0 12px 26px rgba(0,0,0,.18);
+      display:flex;align-items:center;justify-content:space-between;
+      padding:0 14px;
+      cursor:pointer;user-select:none;
+      font-weight:1000;color:var(--text);
     }
+    .sheetAction small{color:var(--muted);font-weight:900;}
+    .depositInput{
+      width:100%;height:52px;border-radius:14px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      padding:0 14px;
+      font-size:18px;font-weight:1000;
+      outline:none;
+    }
+    .row2{display:flex;gap:10px;margin-top:12px;}
+    .row2 .sheetAction{flex:1 1 0;justify-content:center;}
   </style>
 </head>
 
@@ -350,7 +259,7 @@
         <button class="btn ghost" id="btnBonus">BONUS</button>
         <button class="btn orange" id="btnTopup">Пополнить</button>
 
-        <!-- Баланс как кнопка + иконка ton.png -->
+        <!-- Баланс кнопкой + ton.png -->
         <button class="btn primary" id="btnBalance">
           <img class="tonIcon" src="/ton.png" alt="TON" />
           <span>Баланс:</span>
@@ -362,25 +271,23 @@
     <!-- MAIN -->
     <div class="grid">
 
-      <!-- Chart card -->
+      <!-- Chart -->
       <div class="card">
         <div class="chartHead">
           <div class="pair">
             <div class="t">Instrument</div>
             <div class="v" id="pairName">Slot Catalog • Synthetic</div>
           </div>
-
           <div class="stats">
             <div class="stat">Round: <b class="mono" id="roundId">—</b></div>
             <div class="stat">Time: <b class="mono" id="roundTimer">—</b></div>
             <div class="stat">Price: <b class="mono" id="lastPrice">—</b></div>
           </div>
         </div>
-
         <div id="chart"></div>
       </div>
 
-      <!-- Bet panel -->
+      <!-- Bet -->
       <div class="card">
         <div class="betWrap">
           <div class="sectionTitle">Betting</div>
@@ -424,11 +331,15 @@
         <span>Status:</span>
         <strong id="netStatus">connecting…</strong>
       </div>
+      <div class="pill">
+        <span>Wallet:</span>
+        <strong class="mono" id="walletShort">—</strong>
+      </div>
     </div>
 
   </div>
 
-  <!-- BONUS SHEET -->
+  <!-- BONUS -->
   <div class="bonusOverlay" id="bonusOverlay">
     <div class="bonusSheet">
       <div class="bonusHead">
@@ -442,259 +353,510 @@
     </div>
   </div>
 
-  <script>
-    // ---------------------------
-    // Telegram WebApp init
-    // ---------------------------
-    const tg = window.Telegram?.WebApp;
-    try { tg?.ready(); tg?.expand(); } catch(e){}
+  <!-- TON SHEET -->
+  <div class="modalOverlay" id="tonModal">
+    <div class="sheet">
+      <div class="sheetHeader">
+        <div class="sheetTitle"><img src="/ton.png" alt="TON"> TON</div>
+        <button class="closeBtn" id="tonClose">✕</button>
+      </div>
 
-    // ---------------------------
-    // Helpers
-    // ---------------------------
-    const API = ""; // если нужно на другой домен — поставь "https://xxx.vercel.app"
-    const $ = (id) => document.getElementById(id);
+      <div class="sheetBtns">
+        <div class="sheetAction" id="actionBind">
+          <span>Привязать кошелёк</span>
+          <small id="walletStatus">Not connected</small>
+        </div>
+        <div class="sheetAction" id="actionDisconnect">
+          <span>Отвязать кошелёк</span>
+          <small>Disconnect</small>
+        </div>
+        <div class="sheetAction" id="actionDeposit">
+          <span>Депозит</span>
+          <small>Enter amount</small>
+        </div>
+        <div class="sheetAction" id="actionWithdraw">
+          <span>Вывод</span>
+          <small>Later</small>
+        </div>
+      </div>
+    </div>
+  </div>
 
-    async function apiGet(path){
-      const r = await fetch(API + path, { cache: "no-store" });
-      if(!r.ok) throw new Error(path + " " + r.status);
-      return await r.json();
-    }
+  <!-- DEPOSIT INPUT -->
+  <div class="modalOverlay" id="depositModal">
+    <div class="sheet">
+      <div class="sheetHeader">
+        <div class="sheetTitle">Пополнение</div>
+        <button class="closeBtn" id="depositClose">✕</button>
+      </div>
 
-    async function apiPost(path, body){
-      const r = await fetch(API + path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {})
-      });
-      if(!r.ok) throw new Error(path + " " + r.status);
-      return await r.json();
-    }
+      <div style="padding:12px;">
+        <input id="depositAmount" class="depositInput" type="number" min="0.1" step="0.1" placeholder="Сколько TON пополнить?">
 
-    function openExternal(url){
-      if(!url) return false;
-      try{
-        if (tg?.openTelegramLink && (url.startsWith("tg://") || url.includes("t.me/"))) {
-          tg.openTelegramLink(url);
-          return true;
-        }
-        if (tg?.openLink) {
-          tg.openLink(url, { try_instant_view: false });
-          return true;
-        }
-      }catch(e){}
-      window.location.href = url;
-      return true;
-    }
+        <div class="row2">
+          <div class="sheetAction" id="depositBack">Назад</div>
+          <div class="sheetAction" id="depositConfirm">Подтвердить</div>
+        </div>
 
-    // ---------------------------
-    // BONUS modal
-    // ---------------------------
-    const bonusOverlay = $("bonusOverlay");
-    $("btnBonus").onclick = () => bonusOverlay.style.display = "flex";
-    $("btnBonusClose").onclick = () => bonusOverlay.style.display = "none";
-    bonusOverlay.addEventListener("click", (e) => {
-      if(e.target === bonusOverlay) bonusOverlay.style.display = "none";
+        <div class="hint" id="depositHint" style="margin-top:10px;">
+          Оплата через TonConnect. После подтверждения баланс начислится автоматически.
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // =========================
+  // Telegram WebApp
+  // =========================
+  const tg = window.Telegram?.WebApp;
+  try { tg?.ready(); tg?.expand(); } catch(e){}
+
+  const API_BASE =
+    window.API_BASE ||
+    (location.protocol === "file:" ? "https://YOUR-VERCEL-DOMAIN.vercel.app" : "");
+  const apiUrl = (p) => `${API_BASE}${p}`;
+
+  const $ = (id) => document.getElementById(id);
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  function showPopup(title, message){
+    if (tg?.showPopup) tg.showPopup({ title, message, buttons:[{type:"ok"}] });
+    else alert(`${title}\n\n${message}`);
+  }
+
+  // =========================
+  // Bonus
+  // =========================
+  const bonusOverlay = $("bonusOverlay");
+  $("btnBonus").onclick = () => bonusOverlay.style.display = "flex";
+  $("btnBonusClose").onclick = () => bonusOverlay.style.display = "none";
+  bonusOverlay.addEventListener("click", (e) => { if(e.target === bonusOverlay) bonusOverlay.style.display = "none"; });
+
+  // =========================
+  // Chips
+  // =========================
+  let selectedAmt = 0.10;
+  $("chips").addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if(!chip) return;
+    document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    selectedAmt = Number(chip.dataset.amt || "0.1");
+    $("betAmt").textContent = selectedAmt.toFixed(2);
+  });
+
+  // =========================
+  // Chart
+  // =========================
+  let chart, areaSeries, lastPrice = null;
+
+  function initChart(){
+    const el = $("chart");
+    chart = LightweightCharts.createChart(el, {
+      autoSize: true,
+      layout: { background: { type: "solid", color: "transparent" }, textColor: "rgba(242,239,255,.75)" },
+      grid: { vertLines: { color: "rgba(255,255,255,.06)" }, horzLines: { color: "rgba(255,255,255,.06)" } },
+      rightPriceScale: { borderColor: "rgba(255,255,255,.12)", textColor: "rgba(242,239,255,.7)" },
+      timeScale: { borderColor: "rgba(255,255,255,.12)", timeVisible: true, secondsVisible: true },
+      crosshair: { vertLine: { color: "rgba(124,77,255,.45)" }, horzLine: { color: "rgba(124,77,255,.35)" } }
     });
 
-    // ---------------------------
-    // Chips
-    // ---------------------------
-    let selectedAmt = 0.10;
-
-    $("chips").addEventListener("click", (e) => {
-      const chip = e.target.closest(".chip");
-      if(!chip) return;
-      document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-      chip.classList.add("active");
-      selectedAmt = Number(chip.dataset.amt || "0.1");
-      $("betAmt").textContent = selectedAmt.toFixed(2);
+    areaSeries = chart.addAreaSeries({
+      lineWidth: 2,
+      lineColor: "rgba(49,209,124,.95)",
+      topColor: "rgba(49,209,124,.35)",
+      bottomColor: "rgba(49,209,124,.05)",
     });
 
-    // ---------------------------
-    // Chart init
-    // ---------------------------
-    let chart, areaSeries, lastPrice = null;
+    new ResizeObserver(() => chart.timeScale().fitContent()).observe(el);
+  }
 
-    function initChart(){
-      const el = $("chart");
-      chart = LightweightCharts.createChart(el, {
-        autoSize: true,
-        layout: {
-          background: { type: "solid", color: "transparent" },
-          textColor: "rgba(242,239,255,.75)"
-        },
-        grid: {
-          vertLines: { color: "rgba(255,255,255,.06)" },
-          horzLines: { color: "rgba(255,255,255,.06)" }
-        },
-        rightPriceScale: {
-          borderColor: "rgba(255,255,255,.12)",
-          textColor: "rgba(242,239,255,.7)"
-        },
-        timeScale: {
-          borderColor: "rgba(255,255,255,.12)",
-          timeVisible: true,
-          secondsVisible: true
-        },
-        crosshair: {
-          vertLine: { color: "rgba(124,77,255,.45)" },
-          horzLine: { color: "rgba(124,77,255,.35)" }
+  function toChartData(series){
+    return (series || []).map(([ts, price]) => ({
+      time: Math.floor(ts / 1000),
+      value: Number(price)
+    }));
+  }
+
+  async function apiGet(path){
+    const r = await fetch(apiUrl(path), { cache: "no-store" });
+    if(!r.ok) throw new Error(path + " " + r.status);
+    return await r.json();
+  }
+
+  async function apiPost(path, body){
+    const r = await fetch(apiUrl(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    });
+    if(!r.ok) throw new Error(path + " " + r.status);
+    return await r.json();
+  }
+
+  // =========================
+  // State / Series
+  // =========================
+  let currentRound = null;
+  let pos = null;
+
+  function fmtTime(ms){
+    if(ms < 0) ms = 0;
+    const s = Math.ceil(ms/1000);
+    const mm = String(Math.floor(s/60)).padStart(2,"0");
+    const ss = String(s%60).padStart(2,"0");
+    return `${mm}:${ss}`;
+  }
+
+  function setPosStatus(){
+    if(!pos){ $("posStatus").textContent = "No position"; return; }
+    $("posStatus").textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON • round ${pos.roundId}`;
+  }
+
+  async function loadState(){
+    const data = await apiGet("/api/state");
+    currentRound = data.round || null;
+    $("roundId").textContent = currentRound?.roundId ?? "—";
+    const now = data.serverNow || Date.now();
+    const endAt = currentRound?.endAt || (now + 10000);
+    $("roundTimer").textContent = fmtTime(endAt - now);
+    $("netStatus").textContent = "online";
+  }
+
+  async function loadSeries(){
+    const data = await apiGet("/api/series");
+    const series = toChartData(data.series);
+    if(series.length){
+      areaSeries.setData(series);
+      lastPrice = series[series.length-1].value;
+      $("lastPrice").textContent = String(lastPrice.toFixed(4));
+    }
+    $("netStatus").textContent = "online";
+  }
+
+  // =========================
+  // TON helpers (как у тебя было)
+  // =========================
+  let __tonCore = null;
+  async function tonCore(){
+    if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
+    return __tonCore;
+  }
+  function bytesToBase64(bytes){
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
+  }
+  async function commentToBocBase64(comment){
+    const { beginCell } = await tonCore();
+    const cell = beginCell().storeUint(0, 32).storeStringTail(String(comment || "")).endCell();
+    const boc = cell.toBoc({ idx: false });
+    return bytesToBase64(boc);
+  }
+  function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
+
+  // wallet LS
+  function getWalletRawLS(){
+    const ls = (localStorage.getItem("walletRaw") || "").trim();
+    return ls || null;
+  }
+  async function setWalletFromTonConnect(wallet){
+    const addr = (wallet?.account?.address || "").trim();
+    if (!addr){
+      localStorage.removeItem("walletRaw");
+      localStorage.removeItem("walletFriendly");
+      return;
+    }
+    const { Address } = await tonCore();
+    const raw = Address.parse(addr).toRawString();
+    localStorage.setItem("walletRaw", raw);
+    const fr = Address.parse(raw).toString({ urlSafe: true, bounceable: false, testOnly: false });
+    localStorage.setItem("walletFriendly", fr);
+  }
+  async function getWalletFriendlyLS(){
+    const cached = (localStorage.getItem("walletFriendly") || "").trim();
+    if (cached) return cached;
+    const raw = getWalletRawLS();
+    if (!raw) return null;
+    const { Address } = await tonCore();
+    const fr = Address.parse(raw).toString({ urlSafe: true, bounceable: false, testOnly: false });
+    localStorage.setItem("walletFriendly", fr);
+    return fr;
+  }
+
+  // =========================
+  // TonConnect init (как было)
+  // =========================
+  (function initTonConnect(){
+    try{
+      const TonConnectUI = window.TON_CONNECT_UI?.TonConnectUI;
+      if (!TonConnectUI) { window.__tonUI = null; window.__wallet = null; return; }
+
+      const tonUI = new TonConnectUI({
+        manifestUrl: location.origin + "/tonconnect-manifest.json",
+        actionsConfiguration: {
+          // ВПИШИ СВОЕГО БОТА, если нужно возвратом в него:
+          // twaReturnUrl: "https://t.me/YOUR_BOT?startapp=1"
         }
       });
 
-      areaSeries = chart.addAreaSeries({
-        lineWidth: 2,
-        lineColor: "rgba(49,209,124,.95)",
-        topColor: "rgba(49,209,124,.35)",
-        bottomColor: "rgba(49,209,124,.05)",
+      window.__tonUI = tonUI;
+      window.__wallet = null;
+
+      tonUI.onStatusChange(async (wallet) => {
+        window.__wallet = wallet || null;
+        try{ await setWalletFromTonConnect(wallet); }catch{
+          localStorage.removeItem("walletRaw");
+          localStorage.removeItem("walletFriendly");
+        }
+        window.dispatchEvent(new Event("wallet_changed"));
       });
 
-      new ResizeObserver(() => chart.timeScale().fitContent()).observe(el);
+      tonUI.connectionRestored
+        .then(() => window.dispatchEvent(new Event("wallet_changed")))
+        .catch(() => {});
+    }catch{
+      window.__tonUI = null;
+      window.__wallet = null;
     }
+  })();
 
-    function toChartData(series){
-      // ожидаем формат [[ts_ms, price], ...]
-      return (series || []).map(([ts, price]) => ({
-        time: Math.floor(ts / 1000),
-        value: Number(price)
-      }));
-    }
+  async function bindWalletOnServer(){
+    const raw = getWalletRawLS();
+    const initData = tg?.initData || "";
+    if (!raw || !initData) return;
+    try{
+      await fetch(apiUrl(`/api/bind_wallet?t=${Date.now()}`), {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ initData, walletAddress: raw })
+      });
+    }catch{}
+  }
 
-    // ---------------------------
-    // State / Series / Balance
-    // ---------------------------
-    let currentRound = null;
-    let pos = null; // {side, amount, roundId}
+  // =========================
+  // Balance + Deposit flow (1-в-1 по схеме)
+  // =========================
+  let balanceTonCache = 0;
 
-    function fmtTime(ms){
-      if(ms < 0) ms = 0;
-      const s = Math.ceil(ms/1000);
-      const mm = String(Math.floor(s/60)).padStart(2,"0");
-      const ss = String(s%60).padStart(2,"0");
-      return `${mm}:${ss}`;
-    }
+  function setBalanceTonUI(v){
+    balanceTonCache = Number(v) || 0;
+    $("balTon").textContent = balanceTonCache.toFixed(2);
+  }
 
-    function setPosStatus(){
-      if(!pos){ $("posStatus").textContent = "No position"; return; }
-      $("posStatus").textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON • round ${pos.roundId}`;
-    }
+  async function refreshBalance(){
+    const raw = getWalletRawLS();
+    if (!raw){ setBalanceTonUI(0); return 0; }
+    const r = await fetch(apiUrl(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
+    const j = await r.json().catch(()=>({}));
+    // поддержим разные поля, но основной паттерн: balanceTon
+    const ton = Number(j.balanceTon ?? j.ton ?? (j.nano ? (Number(j.nano)/1e9) : 0) ?? 0);
+    if (!Number.isFinite(ton)) return balanceTonCache;
+    setBalanceTonUI(ton);
+    return ton;
+  }
 
-    async function loadState(){
-      const data = await apiGet("/api/state");
-      currentRound = data.round || null;
-      $("roundId").textContent = currentRound?.roundId ?? "—";
+  async function confirmDepositTry(intentId, addressRaw){
+    const url = apiUrl(`/api/confirm_deposit?intentId=${encodeURIComponent(intentId)}&address=${encodeURIComponent(addressRaw)}&t=${Date.now()}`);
+    const r = await fetch(url, { cache:"no-store" });
+    const j = await r.json().catch(()=>({}));
+    return { ok: r.ok, json: j };
+  }
 
-      const now = data.serverNow || Date.now();
-      const endAt = currentRound?.endAt || (now + 10000);
-      $("roundTimer").textContent = fmtTime(endAt - now);
+  async function resumeDepositsSilently(){
+    const raw = getWalletRawLS();
+    if (!raw) return;
+    try{
+      await fetch(apiUrl(`/api/deposit_resume?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
+    }catch{}
+  }
 
-      $("netStatus").textContent = "online";
-    }
+  async function waitAndCreditSilent(intentId){
+    const raw = getWalletRawLS();
+    if (!raw) return;
+    try{ localStorage.setItem("lastDepositIntentId", String(intentId)); }catch{}
 
-    async function loadSeries(){
-      const data = await apiGet("/api/series");
-      const series = toChartData(data.series);
-
-      if(series.length){
-        areaSeries.setData(series);
-        lastPrice = series[series.length-1].value;
-        $("lastPrice").textContent = String(lastPrice.toFixed(4));
-      }
-      $("netStatus").textContent = "online";
-    }
-
-    async function loadBalance(){
-      const data = await apiGet("/api/balance");
-      const ton = Number(data.balanceTon ?? data.ton ?? data.balance ?? 0);
-      $("balTon").textContent = ton.toFixed(2);
-      $("netStatus").textContent = "online";
-    }
-
-    // ---------------------------
-    // LONG / SHORT
-    // ---------------------------
-    async function place(side){
-      if(!currentRound?.roundId){
-        $("hint").textContent = "Нет активного раунда. Подожди…";
+    for (let i=0;i<80;i++){
+      const { ok, json } = await confirmDepositTry(intentId, raw);
+      if (ok && json?.status === "credited"){
+        try{ localStorage.removeItem("lastDepositIntentId"); }catch{}
+        await refreshBalance();
+        setTimeout(refreshBalance, 350);
+        showPopup("TON", `Баланс пополнен: +${json.creditedTon} TON`);
         return;
       }
-      try{
-        $("hint").textContent = "Отправляю ставку…";
-        const payload = {
-          side,                     // "long" | "short"
-          amountTon: selectedAmt,   // сумма TON
-          roundId: currentRound.roundId
-        };
-        await apiPost("/api/bet_place", payload);
-
-        pos = { side, amount: selectedAmt, roundId: currentRound.roundId };
-        setPosStatus();
-        $("hint").textContent = "Ставка принята ✅";
-        await loadBalance();
-      }catch(e){
-        console.error(e);
-        $("hint").textContent = "Ошибка ставки: " + e.message;
-        $("netStatus").textContent = "error";
-      }
+      await sleep(1500);
     }
+  }
 
-    $("btnLong").onclick = () => place("long");
-    $("btnShort").onclick = () => place("short");
+  // =========================
+  // TON modal UI
+  // =========================
+  const tonModal = $("tonModal");
+  const depositModal = $("depositModal");
 
-    // ---------------------------
-    // Buttons: TOPUP / BALANCE
-    // ---------------------------
-    $("btnBalance").onclick = async () => {
-      // просто обновим баланс
-      try{
-        $("hint").textContent = "Обновляю баланс…";
-        await loadBalance();
-        $("hint").textContent = "Баланс обновлён ✅";
-      }catch(e){
-        $("hint").textContent = "Не удалось получить баланс: " + e.message;
-      }
-    };
+  function openTonModal(){ tonModal.classList.add("open"); }
+  function closeTonModal(){ tonModal.classList.remove("open"); }
+  function openDepositModal(){ depositModal.classList.add("open"); }
+  function closeDepositModal(){ depositModal.classList.remove("open"); }
 
-    $("btnTopup").onclick = async () => {
-      try{
-        $("hint").textContent = "Создаю пополнение…";
-        // твой сервер может ожидать amountTon / amountNano — пока шлём amountTon
-        const res = await apiPost("/api/deposit_intent", { amountTon: selectedAmt });
+  $("btnBalance").onclick = () => openTonModal();
+  $("tonClose").onclick = () => closeTonModal();
+  tonModal.addEventListener("click", (e) => { if(e.target === tonModal) closeTonModal(); });
 
-        // поддержим разные форматы ответа (как у людей обычно бывает)
-        const payUrl = res.payUrl || res.url || res.paymentUrl || res.link || res.invoiceLink;
-        if(payUrl){
-          openExternal(payUrl);
-          $("hint").textContent = "Открываю оплату…";
-        }else{
-          $("hint").textContent = "deposit_intent создан, но сервер не вернул ссылку (payUrl).";
-        }
-      }catch(e){
-        console.error(e);
-        $("hint").textContent = "Ошибка пополнения: " + e.message;
-      }
-    };
+  $("depositClose").onclick = () => closeDepositModal();
+  $("depositBack").onclick = () => closeDepositModal();
+  depositModal.addEventListener("click", (e) => { if(e.target === depositModal) closeDepositModal(); });
 
-    // ---------------------------
-    // Boot
-    // ---------------------------
-    initChart();
-    setPosStatus();
+  async function syncWalletUI(){
+    const raw = getWalletRawLS();
+    const walletShortEl = $("walletShort");
+    const walletStatus = $("walletStatus");
 
-    async function boot(){
-      try{
-        await Promise.all([loadState(), loadSeries(), loadBalance()]);
-      }catch(e){
-        console.error(e);
-        $("netStatus").textContent = "offline";
-      }
+    if (!raw){
+      walletShortEl.textContent = "—";
+      walletStatus.textContent = "Not connected";
+      return;
     }
+    const fr = await getWalletFriendlyLS();
+    const show = fr || raw;
+    const s = shortAddr(show);
+    walletShortEl.textContent = s;
+    walletStatus.textContent = s;
+  }
 
-    boot();
-    setInterval(() => loadState().catch(()=>{$("netStatus").textContent="offline";}), 1000);
-    setInterval(() => loadSeries().catch(()=>{$("netStatus").textContent="offline";}), 1500);
-    setInterval(() => loadBalance().catch(()=>{}), 5000);
-  </script>
+  window.addEventListener("wallet_changed", async () => {
+    await syncWalletUI();
+    await bindWalletOnServer();
+    await resumeDepositsSilently();
+    await refreshBalance();
+  });
+
+  $("actionBind").onclick = async () => {
+    if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
+    showPopup("TON", "TonConnect не загрузился или manifest не доступен.");
+  };
+
+  $("actionDisconnect").onclick = async () => {
+    try{ await window.__tonUI?.disconnect?.(); }catch{}
+    localStorage.removeItem("walletRaw");
+    localStorage.removeItem("walletFriendly");
+    window.__wallet = null;
+    await syncWalletUI();
+    setBalanceTonUI(0);
+    showPopup("TON", "Кошелёк отвязан.");
+  };
+
+  $("actionDeposit").onclick = async () => {
+    if (!getWalletRawLS()){ showPopup("TON", "Сначала привяжи кошелёк."); return; }
+    openDepositModal();
+  };
+
+  $("actionWithdraw").onclick = () => showPopup("TON", "Вывод добавим позже.");
+
+  // TOPBAR: Пополнить = открываем депозит (как ты хотел)
+  $("btnTopup").onclick = async () => {
+    if (!getWalletRawLS()){ openTonModal(); showPopup("TON", "Сначала привяжи кошелёк."); return; }
+    openDepositModal();
+  };
+
+  $("depositConfirm").onclick = async () => {
+    const raw = getWalletRawLS();
+    if (!raw){ showPopup("TON", "Сначала привяжи кошелёк."); return; }
+
+    const amountTon = Number($("depositAmount").value);
+    if (!amountTon || amountTon <= 0){ showPopup("Ошибка", "Введите сумму TON"); return; }
+    if (amountTon < 0.1){ showPopup("Ошибка", "Минимум 0.1 TON"); return; }
+    if (!window.__tonUI?.sendTransaction){ showPopup("TON", "TonConnect UI не готов."); return; }
+
+    try{
+      $("depositHint").textContent = "Создаю intent…";
+
+      // 1) deposit_intent (как в твоём файле: amountTon + address) :contentReference[oaicite:6]{index=6}
+      const intent = await apiPost("/api/deposit_intent?t=" + Date.now(), {
+        amountTon,
+        address: raw
+      });
+
+      $("depositHint").textContent = "Открой кошелёк и подтверди транзакцию…";
+
+      // 2) sendTransaction (payload = commentToBocBase64(comment)) — как у тебя было :contentReference[oaicite:7]{index=7}
+      await window.__tonUI.sendTransaction({
+        validUntil: Math.floor(Date.now()/1000) + 300,
+        messages:[{
+          address: intent.toAddressFriendly || intent.toAddressRaw || intent.toAddress,
+          amount: String(intent.amountNano),
+          payload: await commentToBocBase64(intent.comment || "")
+        }]
+      });
+
+      closeDepositModal();
+      showPopup("TON", "Транзакция отправлена. Ждём подтверждение…");
+
+      // 3) confirm_deposit polling (как раньше: ждать и начислить) :contentReference[oaicite:8]{index=8}
+      setTimeout(() => waitAndCreditSilent(intent.intentId), 8000);
+
+    }catch(e){
+      console.log(e);
+      $("depositHint").textContent = "Оплата отменена или ошибка кошелька.";
+      showPopup("TON", "Транзакция отменена или ошибка кошелька.");
+    }
+  };
+
+  // =========================
+  // Bets (LONG/SHORT)
+  // =========================
+  async function place(side){
+    if(!currentRound?.roundId){
+      $("hint").textContent = "Нет активного раунда. Подожди…";
+      return;
+    }
+    try{
+      $("hint").textContent = "Отправляю ставку…";
+      const payload = {
+        side,               // "long" | "short" (потом подгоним под твой API, если нужно)
+        amountTon: selectedAmt,
+        roundId: currentRound.roundId,
+        address: getWalletRawLS() || null
+      };
+      await apiPost("/api/bet_place?t=" + Date.now(), payload);
+
+      pos = { side, amount: selectedAmt, roundId: currentRound.roundId };
+      setPosStatus();
+      $("hint").textContent = "Ставка принята ✅";
+      await refreshBalance();
+    }catch(e){
+      console.error(e);
+      $("hint").textContent = "Ошибка ставки: " + e.message;
+      $("netStatus").textContent = "error";
+    }
+  }
+
+  $("btnLong").onclick = () => place("long");
+  $("btnShort").onclick = () => place("short");
+
+  // =========================
+  // Boot
+  // =========================
+  initChart();
+  setPosStatus();
+
+  async function boot(){
+    try{
+      await Promise.all([loadState(), loadSeries()]);
+      await syncWalletUI();
+      await resumeDepositsSilently();
+      await refreshBalance();
+    }catch(e){
+      console.error(e);
+      $("netStatus").textContent = "offline";
+    }
+  }
+
+  boot();
+  setInterval(() => loadState().catch(()=>{$("netStatus").textContent="offline";}), 1000);
+  setInterval(() => loadSeries().catch(()=>{$("netStatus").textContent="offline";}), 1500);
+  setInterval(() => refreshBalance().catch(()=>{}), 5000);
+</script>
 </body>
 </html>
