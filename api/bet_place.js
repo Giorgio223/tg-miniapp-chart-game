@@ -1,5 +1,7 @@
+// api/bet_place.js
 import { Redis } from "@upstash/redis";
 import { Address } from "@ton/core";
+import { BET_MS, ROUND_MS, roundIdByNow, roundStartAt } from "../lib/game";
 
 export const config = { runtime: "nodejs" };
 
@@ -7,10 +9,6 @@ const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
-
-const BET_MS = 7000;
-const PLAY_MS = 12000;
-const ROUND_MS = BET_MS + PLAY_MS;
 
 function canonicalFriendly(addr) {
   const a = Address.parse(String(addr));
@@ -42,8 +40,8 @@ export default async function handler(req, res) {
     catch { return res.status(400).json({ error: "bad_address" }); }
 
     const now = Date.now();
-    const curRound = Math.floor(now / ROUND_MS);
-    const startAt = curRound * ROUND_MS;
+    const curRound = roundIdByNow(now);
+    const startAt = roundStartAt(curRound);
     const endAt = startAt + BET_MS;
 
     const rid = Number(roundId);
@@ -51,15 +49,25 @@ export default async function handler(req, res) {
     if (now >= endAt) return res.status(400).json({ error: "bets_closed" });
 
     const betKey = `bet:${rid}:${friendly}`;
-    const already = await redis.get(betKey);
-    if (already) return res.status(400).json({ error: "already_placed" });
 
+    // ✅ разрешаем замену ставки в окне ставок: если была старая — вернем старую сумму, потом спишем новую
     const balKey = `bal:${friendly}`;
     const curBal = Number(await redis.get(balKey) || "0");
-    if (!Number.isFinite(curBal) || curBal < amountNano) return res.status(400).json({ error: "insufficient" });
 
-    // списываем ставку
-    await redis.set(balKey, String(curBal - amountNano));
+    let old = null;
+    const oldRaw = await redis.get(betKey);
+    if (oldRaw) {
+      try { old = JSON.parse(oldRaw); } catch {}
+    }
+
+    let bal = Number.isFinite(curBal) ? curBal : 0;
+    if (old?.amountNano) bal += Number(old.amountNano); // вернули старую ставку
+
+    if (bal < amountNano) return res.status(400).json({ error: "insufficient" });
+
+    // списываем новую
+    bal -= amountNano;
+    await redis.set(balKey, String(bal));
 
     const bet = {
       roundId: rid,
@@ -71,7 +79,7 @@ export default async function handler(req, res) {
 
     await redis.set(betKey, JSON.stringify(bet), { ex: 24 * 60 * 60 });
 
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, replaced: !!oldRaw });
   } catch (e) {
     return res.status(500).json({ error: "bet_place_error", message: String(e) });
   }
