@@ -480,10 +480,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const tg = window.Telegram?.WebApp;
   try { tg?.ready(); tg?.expand(); } catch(e){}
 
-  const API_BASE =
-    window.API_BASE ||
-    (location.protocol === "file:" ? "https://YOUR-VERCEL-DOMAIN.vercel.app" : "");
-  const apiUrl = (p) => `${API_BASE}${p}`;
+  // ✅ Всегда абсолютная база
+  const API_BASE = window.API_BASE || location.origin;
+  const apiUrl = (path) => new URL(path, API_BASE).toString();
 
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -511,25 +510,42 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   async function apiGet(path){
-    const r = await fetch(apiUrl(path), { cache: "no-store" });
-    if(!r.ok) throw new Error(path + " " + r.status);
-    return await r.json();
+    const url = apiUrl(path);
+    const r = await fetch(url, { cache: "no-store" });
+    const text = await r.text();
+    let j = null;
+    try { j = JSON.parse(text); } catch { j = { raw: text }; }
+
+    if(!r.ok){
+      console.error("API GET FAIL:", path, r.status, j);
+      throw new Error(`${path} ${r.status}`);
+    }
+    return j;
   }
+
   async function apiPost(path, body){
-    const r = await fetch(apiUrl(path), {
+    const url = apiUrl(path);
+    const r = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {})
     });
-    if(!r.ok) throw new Error(path + " " + r.status);
-    return await r.json();
+    const text = await r.text();
+    let j = null;
+    try { j = JSON.parse(text); } catch { j = { raw: text }; }
+
+    if(!r.ok){
+      console.error("API POST FAIL:", path, r.status, j);
+      throw new Error(`${path} ${r.status}`);
+    }
+    return j;
   }
 
   // =========================
-  // Chart (нитка)
+  // Chart (Area + fallback + timestamps)
   // =========================
-  let chart, lineSeries;
-  let priceLines = [];
+  let chart, series;
+  let didSetInitialData = false;
 
   function initChart(){
     const el = $("chart");
@@ -546,9 +562,12 @@ document.addEventListener("DOMContentLoaded", () => {
       crosshair: { vertLine: { color: "rgba(124,77,255,.45)" }, horzLine: { color: "rgba(124,77,255,.35)" } }
     });
 
-    lineSeries = chart.addLineSeries({
+    // ✅ как на примере: линия + заливка
+    series = chart.addAreaSeries({
       lineWidth: 2,
-      color: "rgba(49,209,124,.95)",
+      lineColor: "rgba(49,209,124,.95)",
+      topColor: "rgba(49,209,124,.28)",
+      bottomColor: "rgba(49,209,124,0.00)",
       priceFormat: { type: "custom", formatter: (v) => `${Number(v).toFixed(0)}%` }
     });
 
@@ -563,7 +582,7 @@ document.addEventListener("DOMContentLoaded", () => {
     boundSeries.setData([{ time: now - 2, value: -100 }, { time: now - 1, value: 100 }]);
 
     function addPL(val, title){
-      return lineSeries.createPriceLine({
+      return series.createPriceLine({
         price: val,
         color: "rgba(255,255,255,.14)",
         lineWidth: 1,
@@ -572,24 +591,41 @@ document.addEventListener("DOMContentLoaded", () => {
         title
       });
     }
-    priceLines.push(addPL(100, "100%"));
-    priceLines.push(addPL(50, "50%"));
-    priceLines.push(addPL(0, "0%"));
-    priceLines.push(addPL(-50, "-50%"));
-    priceLines.push(addPL(-100, "-100%"));
+    addPL(100, "100%");
+    addPL(50, "50%");
+    addPL(0, "0%");
+    addPL(-50, "-50%");
+    addPL(-100, "-100%");
+
+    // ✅ fallback — чтобы не было пусто вообще никогда
+    const fNow = Math.floor(Date.now()/1000);
+    series.setData([
+      { time: fNow - 3, value: 0 },
+      { time: fNow - 2, value: 0 },
+      { time: fNow - 1, value: 0 }
+    ]);
+    didSetInitialData = true;
 
     new ResizeObserver(() => chart.timeScale().fitContent()).observe(el);
   }
 
-  function toChartData(series){
-    return (series || []).map(([ts, pct]) => ({
-      time: Math.floor(ts / 1000),
-      value: Number(pct)
-    }));
+  function normalizeTsToSec(ts){
+    const n = Number(ts);
+    if(!Number.isFinite(n)) return Math.floor(Date.now()/1000);
+    if (n > 2e12) return Math.floor(n / 1000); // ms
+    return Math.floor(n); // sec
+  }
+
+  function toChartData(seriesArr){
+    const arr = Array.isArray(seriesArr) ? seriesArr : [];
+    return arr
+      .map(([ts, pct]) => ({ time: normalizeTsToSec(ts), value: Number(pct) }))
+      .filter(p => Number.isFinite(p.time) && Number.isFinite(p.value))
+      .sort((a,b) => a.time - b.time);
   }
 
   // =========================
-  // Countdown (исправлено: НЕТ дублей cdNum/cdRing)
+  // Countdown
   // =========================
   const cdEl = $("countdown");
   const cdNumEl = $("cdNum");
@@ -651,7 +687,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // =========================
-  // Wallet/balance/deposit (твоя схема)
+  // Wallet/balance/deposit (как было)
   // =========================
   let __tonCore = null;
   async function tonCore(){
@@ -706,9 +742,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const tonUI = new TonConnectUI({
         manifestUrl: location.origin + "/tonconnect-manifest.json",
-        actionsConfiguration: {
-          // twaReturnUrl: "https://t.me/YOUR_BOT?startapp=1"
-        }
       });
 
       window.__tonUI = tonUI;
@@ -742,7 +775,9 @@ document.addEventListener("DOMContentLoaded", () => {
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({ initData, walletAddress: raw })
       });
-    }catch{}
+    }catch(e){
+      console.warn("bind_wallet failed:", e);
+    }
   }
 
   function setBalanceTonUI(v){
@@ -760,12 +795,17 @@ document.addEventListener("DOMContentLoaded", () => {
     return ton;
   }
 
+  // ✅ ВРЕМЕННО ОТКЛЮЧЕНО (именно это у тебя красное в Network)
+  // Когда починишь серверный /api/deposit_resume — убери "return;" ниже.
   async function resumeDepositsSilently(){
-    const raw = getWalletRawLS();
-    if (!raw) return;
-    try{
-      await fetch(apiUrl(`/api/deposit_resume?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
-    }catch{}
+    return;
+    // const raw = getWalletRawLS();
+    // if (!raw) return;
+    // try{
+    //   await fetch(apiUrl(`/api/deposit_resume?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
+    // }catch(e){
+    //   console.warn("deposit_resume failed:", e);
+    // }
   }
 
   async function confirmDepositTry(intentId, addressRaw){
@@ -875,12 +915,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       closeDepositModal();
-
-      showPopup(
-        "TON",
-        "Транзакция отправлена, ждём подтверждения.\n\nНе обновляйте страницу и не закрывайте окно."
-      );
-
+      showPopup("TON", "Транзакция отправлена, ждём подтверждения.\n\nНе обновляйте страницу и не закрывайте окно.");
       setTimeout(() => waitAndCreditSilent(intent.intentId), 8000);
     }catch(e){
       showPopup("TON", "Транзакция отменена или ошибка кошелька.");
@@ -1022,10 +1057,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadSeries(){
     const data = await apiGet("/api/series?t=" + Date.now());
-    const series = toChartData(data.series);
-    if(series.length){
-      lineSeries.setData(series);
+    const points = toChartData(data.series);
+
+    if(!points.length) return;
+
+    // 1) Первый раз — setData
+    if(!didSetInitialData){
+      series.setData(points);
+      chart.timeScale().fitContent();
+      didSetInitialData = true;
+      return;
     }
+
+    // 2) Потом — update последней точкой (без постоянного setData)
+    const last = points[points.length - 1];
+    series.update(last);
   }
 
   // boot
@@ -1041,11 +1087,13 @@ document.addEventListener("DOMContentLoaded", () => {
       await syncWalletUI();
       await resumeDepositsSilently();
       await refreshBalance();
-    }catch(e){}
+    }catch(e){
+      console.error("BOOT ERROR:", e);
+    }
   })();
 
-  setInterval(() => loadState().catch(()=>{}), 600);
-  setInterval(() => loadSeries().catch(()=>{}), 1100);
+  setInterval(() => loadState().catch(e => console.warn("state err", e)), 800);
+  setInterval(() => loadSeries().catch(e => console.warn("series err", e)), 900);
   setInterval(() => updateBetCountdown(), 120);
   setInterval(() => trySettleIfNeeded(), 600);
   setInterval(() => refreshBalance().catch(()=>{}), 6500);
