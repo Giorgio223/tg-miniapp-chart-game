@@ -5,13 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
   <title>Chart Game</title>
 
-  <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-  <!-- TonConnect UI (как в прошлом проекте) -->
   <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
-
-  <!-- Chart -->
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 
   <style>
@@ -20,6 +15,7 @@
       --text:#f2efff;
       --muted:rgba(242,239,255,.65);
       --green:#31d17c;
+      --yellow:#ffcc33;
       --red:#ff4d4d;
       --purple:#7c4dff;
       --orange:#ff9d2e;
@@ -51,7 +47,7 @@
       position: sticky; top: 10px; z-index: 50;
       backdrop-filter: blur(10px);
     }
-    .brand{display:flex;align-items:center;gap:10px;min-width:0;}
+    .brand{display:flex;align-items:center;gap:10px;}
     .logo{
       width:34px;height:34px;border-radius:12px;
       background: radial-gradient(circle at 30% 30%, rgba(124,77,255,.9), rgba(124,77,255,.25)),
@@ -68,7 +64,7 @@
       color:var(--text);
       background: rgba(255,255,255,.06);
       border:1px solid rgba(255,255,255,.12);
-      transition: transform .06s ease, background .2s ease;
+      transition: transform .06s ease, background .2s ease, opacity .2s ease;
       display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
     }
     .btn:active{transform: translateY(1px) scale(.99)}
@@ -83,7 +79,10 @@
       box-shadow: 0 12px 30px rgba(255,157,46,.20);
     }
     .btn.ghost{background: rgba(0,0,0,.18);}
+    .btn.disabled{opacity:.45; pointer-events:none;}
+
     .tonIcon{width:18px;height:18px;object-fit:contain;display:block;filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));}
+    .mono{font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1;}
 
     .grid{margin-top:12px;display:grid;grid-template-columns:1.2fr .8fr;gap:12px;}
     @media (max-width:860px){ .grid{grid-template-columns:1fr} .topbar{position:static} }
@@ -94,32 +93,50 @@
       background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
       box-shadow: var(--shadow);
       overflow:hidden;
+      position: relative;
     }
 
-    .chartHead{
-      padding:12px 12px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px;
-      background: linear-gradient(180deg, rgba(0,0,0,.18), transparent);
-      border-bottom: 1px solid rgba(255,255,255,.06);
-    }
-    .pair{display:flex;flex-direction:column;gap:2px;min-width:0;}
-    .pair .t{font-size:12px;color:var(--muted);font-weight:800;}
-    .pair .v{font-size:14px;font-weight:1100;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .stats{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
-    .stat{
-      padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.18);font-size:11px;color:var(--muted);
-    }
-    .stat b{color:var(--text)}
+    /* Chart */
     #chart{
       height:360px;
       background: radial-gradient(900px 520px at 50% 0%, rgba(124,77,255,.30), rgba(124,77,255,.08) 45%, rgba(0,0,0,.10) 70%);
     }
 
-    .betWrap{padding:12px;}
-    .sectionTitle{
-      font-size:12px;font-weight:1100;letter-spacing:.35px;text-transform:uppercase;color:var(--muted);
-      margin:2px 0 10px;
+    /* Countdown circle overlay */
+    .countdown{
+      position:absolute;
+      left:50%;
+      top:50%;
+      transform: translate(-50%,-50%);
+      width: 112px;
+      height: 112px;
+      display:none;
+      place-items:center;
+      z-index: 20;
+      pointer-events:none;
+      filter: drop-shadow(0 18px 45px rgba(0,0,0,.55));
     }
+    .countdown.show{display:grid;}
+    .cdNum{
+      position:absolute;
+      font-weight:1200;
+      font-size:34px;
+      letter-spacing:.2px;
+      color: var(--text);
+      text-shadow: 0 8px 30px rgba(0,0,0,.65);
+    }
+    .cdSub{
+      position:absolute;
+      bottom: 18px;
+      font-size: 10px;
+      color: rgba(242,239,255,.70);
+      font-weight: 900;
+      letter-spacing: .25px;
+      text-transform: uppercase;
+    }
+
+    /* Bet panel */
+    .betWrap{padding:12px;}
     .amountGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}
     .chip{
       padding:10px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.10);
@@ -131,7 +148,6 @@
       background: linear-gradient(180deg, rgba(255,157,46,.18), rgba(0,0,0,.18));
       box-shadow: 0 10px 25px rgba(255,157,46,.10);
     }
-
     .bigBox{
       padding:12px;border-radius:16px;border:1px solid rgba(255,255,255,.10);
       background: rgba(0,0,0,.22);margin-bottom:10px;
@@ -150,21 +166,10 @@
       border:1px solid rgba(255,77,77,.70);
       box-shadow: 0 14px 34px rgba(255,77,77,.18);
     }
-    .hint{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.35;}
-    .strip{
-      margin-top:12px;padding:10px 12px;border-radius: var(--radius);
-      border:1px solid rgba(255,255,255,.10);
-      background: linear-gradient(180deg, rgba(0,0,0,.22), rgba(255,255,255,.03));
-      display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
-    }
-    .pill{
-      display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;
-      border:1px solid var(--stroke);background: rgba(0,0,0,.18);font-size:12px;color:var(--muted);
-    }
-    .pill strong{color:var(--text);font-weight:1000}
-    .mono{font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1;}
 
-    /* BONUS bottom sheet */
+    .hint{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.35;min-height:34px;}
+
+    /* BONUS sheet */
     .bonusOverlay{
       position: fixed; inset: 0; background: rgba(0,0,0,.62);
       display:none;align-items:flex-end;justify-content:center;padding:14px;
@@ -185,7 +190,7 @@
     .bonusHead .t{font-weight:1100;letter-spacing:.3px;text-transform:uppercase;font-size:12px;color:var(--text);}
     .bonusBody{padding:12px;color:var(--muted);line-height:1.45;font-size:13px;}
 
-    /* TON modal (bottom sheet) */
+    /* TON modal */
     .modalOverlay{
       position:fixed; inset:0;
       background: rgba(0,0,0,.55);
@@ -248,18 +253,13 @@
 
 <body>
   <div class="wrap">
-
-    <!-- TOPBAR -->
     <div class="topbar">
-      <div class="brand">
-        <div class="logo"></div>
-      </div>
+      <div class="brand"><div class="logo"></div></div>
 
       <div class="rightbar">
         <button class="btn ghost" id="btnBonus">BONUS</button>
         <button class="btn orange" id="btnTopup">Пополнить</button>
 
-        <!-- Баланс кнопкой + ton.png -->
         <button class="btn primary" id="btnBalance">
           <img class="tonIcon" src="/ton.png" alt="TON" />
           <span>Баланс:</span>
@@ -268,30 +268,36 @@
       </div>
     </div>
 
-    <!-- MAIN -->
     <div class="grid">
-
-      <!-- Chart -->
+      <!-- Chart card -->
       <div class="card">
-        <div class="chartHead">
-          <div class="pair">
-            <div class="t">Instrument</div>
-            <div class="v" id="pairName">Slot Catalog • Synthetic</div>
-          </div>
-          <div class="stats">
-            <div class="stat">Round: <b class="mono" id="roundId">—</b></div>
-            <div class="stat">Time: <b class="mono" id="roundTimer">—</b></div>
-            <div class="stat">Price: <b class="mono" id="lastPrice">—</b></div>
-          </div>
-        </div>
         <div id="chart"></div>
+
+        <!-- Countdown overlay -->
+        <div class="countdown" id="countdown">
+          <svg width="112" height="112" viewBox="0 0 112 112">
+            <defs>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="3.5" result="coloredBlur"/>
+                <feMerge>
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+            <circle cx="56" cy="56" r="46" stroke="rgba(255,255,255,.10)" stroke-width="10" fill="rgba(0,0,0,.20)"></circle>
+            <circle id="cdRing" cx="56" cy="56" r="46" stroke="rgba(49,209,124,.95)" stroke-width="10" fill="transparent"
+              stroke-linecap="round" transform="rotate(-90 56 56)"
+              filter="url(#glow)"></circle>
+          </svg>
+          <div class="cdNum mono" id="cdNum">7</div>
+          <div class="cdSub">BET</div>
+        </div>
       </div>
 
-      <!-- Bet -->
+      <!-- Bet card -->
       <div class="card">
         <div class="betWrap">
-          <div class="sectionTitle">Betting</div>
-
           <div class="amountGrid" id="chips">
             <div class="chip active" data-amt="0.1">0.10</div>
             <div class="chip" data-amt="0.2">0.20</div>
@@ -310,7 +316,7 @@
 
           <div class="bigBox">
             <div class="label">Your position</div>
-            <div class="value mono" id="posStatus">No position</div>
+            <div class="value mono" id="posStatus">—</div>
           </div>
 
           <div class="actions">
@@ -318,25 +324,10 @@
             <button class="btn btnShort" id="btnShort">SHORT ▼</button>
           </div>
 
-          <div class="hint" id="hint">
-            Нажми <b>LONG</b> или <b>SHORT</b> в течение раунда.
-          </div>
+          <div class="hint" id="hint"></div>
         </div>
       </div>
-
     </div>
-
-    <div class="strip">
-      <div class="pill">
-        <span>Status:</span>
-        <strong id="netStatus">connecting…</strong>
-      </div>
-      <div class="pill">
-        <span>Wallet:</span>
-        <strong class="mono" id="walletShort">—</strong>
-      </div>
-    </div>
-
   </div>
 
   <!-- BONUS -->
@@ -347,8 +338,7 @@
         <button class="btn ghost" id="btnBonusClose">Закрыть</button>
       </div>
       <div class="bonusBody">
-        Тут будет бонусная система (ежедневные бонусы, задания, промокоды и т.д.).<br/>
-        Пока это окно-заглушка — функцию зададим позже.
+        Тут будет бонусная система. Функцию добавим позже.
       </div>
     </div>
   </div>
@@ -398,17 +388,12 @@
           <div class="sheetAction" id="depositConfirm">Подтвердить</div>
         </div>
 
-        <div class="hint" id="depositHint" style="margin-top:10px;">
-          Оплата через TonConnect. После подтверждения баланс начислится автоматически.
-        </div>
+        <div class="hint" id="depositHint" style="margin-top:10px;"></div>
       </div>
     </div>
   </div>
 
 <script>
-  // =========================
-  // Telegram WebApp
-  // =========================
   const tg = window.Telegram?.WebApp;
   try { tg?.ready(); tg?.expand(); } catch(e){}
 
@@ -419,22 +404,19 @@
 
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
   function showPopup(title, message){
     if (tg?.showPopup) tg.showPopup({ title, message, buttons:[{type:"ok"}] });
     else alert(`${title}\n\n${message}`);
   }
 
-  // =========================
-  // Bonus
-  // =========================
+  // BONUS
   const bonusOverlay = $("bonusOverlay");
   $("btnBonus").onclick = () => bonusOverlay.style.display = "flex";
   $("btnBonusClose").onclick = () => bonusOverlay.style.display = "none";
   bonusOverlay.addEventListener("click", (e) => { if(e.target === bonusOverlay) bonusOverlay.style.display = "none"; });
 
-  // =========================
   // Chips
-  // =========================
   let selectedAmt = 0.10;
   $("chips").addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
@@ -445,11 +427,8 @@
     $("betAmt").textContent = selectedAmt.toFixed(2);
   });
 
-  // =========================
   // Chart
-  // =========================
-  let chart, areaSeries, lastPrice = null;
-
+  let chart, areaSeries;
   function initChart(){
     const el = $("chart");
     chart = LightweightCharts.createChart(el, {
@@ -483,7 +462,6 @@
     if(!r.ok) throw new Error(path + " " + r.status);
     return await r.json();
   }
-
   async function apiPost(path, body){
     const r = await fetch(apiUrl(path), {
       method: "POST",
@@ -494,49 +472,36 @@
     return await r.json();
   }
 
-  // =========================
-  // State / Series
-  // =========================
+  // Time sync
+  let timeOffsetMs = 0; // serverNow - Date.now()
+
+  // Round/game
   let currentRound = null;
-  let pos = null;
+  let betMs = 7000;
+  let roundMs = 19000;
 
-  function fmtTime(ms){
-    if(ms < 0) ms = 0;
-    const s = Math.ceil(ms/1000);
-    const mm = String(Math.floor(s/60)).padStart(2,"0");
-    const ss = String(s%60).padStart(2,"0");
-    return `${mm}:${ss}`;
+  // Countdown UI
+  const cd = $("countdown");
+  const cdNum = $("cdNum");
+  const cdRing = $("cdRing");
+  const R = 46;
+  const CIRC = 2 * Math.PI * R;
+  cdRing.setAttribute("stroke-dasharray", String(CIRC));
+  cdRing.setAttribute("stroke-dashoffset", "0");
+
+  function setRing(progress01){
+    // progress01: 1 -> full, 0 -> empty
+    const off = CIRC * (1 - Math.max(0, Math.min(1, progress01)));
+    cdRing.setAttribute("stroke-dashoffset", String(off));
+  }
+  function setRingColor(secLeft){
+    // 7-5 green, 4-3 yellow, 2-0 red
+    if (secLeft >= 5) cdRing.setAttribute("stroke", "rgba(49,209,124,.95)");
+    else if (secLeft >= 3) cdRing.setAttribute("stroke", "rgba(255,204,51,.95)");
+    else cdRing.setAttribute("stroke", "rgba(255,77,77,.95)");
   }
 
-  function setPosStatus(){
-    if(!pos){ $("posStatus").textContent = "No position"; return; }
-    $("posStatus").textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON • round ${pos.roundId}`;
-  }
-
-  async function loadState(){
-    const data = await apiGet("/api/state");
-    currentRound = data.round || null;
-    $("roundId").textContent = currentRound?.roundId ?? "—";
-    const now = data.serverNow || Date.now();
-    const endAt = currentRound?.endAt || (now + 10000);
-    $("roundTimer").textContent = fmtTime(endAt - now);
-    $("netStatus").textContent = "online";
-  }
-
-  async function loadSeries(){
-    const data = await apiGet("/api/series");
-    const series = toChartData(data.series);
-    if(series.length){
-      areaSeries.setData(series);
-      lastPrice = series[series.length-1].value;
-      $("lastPrice").textContent = String(lastPrice.toFixed(4));
-    }
-    $("netStatus").textContent = "online";
-  }
-
-  // =========================
-  // TON helpers (как у тебя было)
-  // =========================
+  // Wallet/balance/deposit (оставляем твою работающую схему)
   let __tonCore = null;
   async function tonCore(){
     if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
@@ -555,7 +520,6 @@
   }
   function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
 
-  // wallet LS
   function getWalletRawLS(){
     const ls = (localStorage.getItem("walletRaw") || "").trim();
     return ls || null;
@@ -584,9 +548,6 @@
     return fr;
   }
 
-  // =========================
-  // TonConnect init (как было)
-  // =========================
   (function initTonConnect(){
     try{
       const TonConnectUI = window.TON_CONNECT_UI?.TonConnectUI;
@@ -595,7 +556,7 @@
       const tonUI = new TonConnectUI({
         manifestUrl: location.origin + "/tonconnect-manifest.json",
         actionsConfiguration: {
-          // ВПИШИ СВОЕГО БОТА, если нужно возвратом в него:
+          // если надо вернуть в бота — впиши сюда:
           // twaReturnUrl: "https://t.me/YOUR_BOT?startapp=1"
         }
       });
@@ -634,14 +595,9 @@
     }catch{}
   }
 
-  // =========================
-  // Balance + Deposit flow (1-в-1 по схеме)
-  // =========================
-  let balanceTonCache = 0;
-
   function setBalanceTonUI(v){
-    balanceTonCache = Number(v) || 0;
-    $("balTon").textContent = balanceTonCache.toFixed(2);
+    const ton = Number(v) || 0;
+    $("balTon").textContent = ton.toFixed(2);
   }
 
   async function refreshBalance(){
@@ -649,18 +605,9 @@
     if (!raw){ setBalanceTonUI(0); return 0; }
     const r = await fetch(apiUrl(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
     const j = await r.json().catch(()=>({}));
-    // поддержим разные поля, но основной паттерн: balanceTon
     const ton = Number(j.balanceTon ?? j.ton ?? (j.nano ? (Number(j.nano)/1e9) : 0) ?? 0);
-    if (!Number.isFinite(ton)) return balanceTonCache;
-    setBalanceTonUI(ton);
+    if (Number.isFinite(ton)) setBalanceTonUI(ton);
     return ton;
-  }
-
-  async function confirmDepositTry(intentId, addressRaw){
-    const url = apiUrl(`/api/confirm_deposit?intentId=${encodeURIComponent(intentId)}&address=${encodeURIComponent(addressRaw)}&t=${Date.now()}`);
-    const r = await fetch(url, { cache:"no-store" });
-    const j = await r.json().catch(()=>({}));
-    return { ok: r.ok, json: j };
   }
 
   async function resumeDepositsSilently(){
@@ -671,17 +618,21 @@
     }catch{}
   }
 
+  async function confirmDepositTry(intentId, addressRaw){
+    const url = apiUrl(`/api/confirm_deposit?intentId=${encodeURIComponent(intentId)}&address=${encodeURIComponent(addressRaw)}&t=${Date.now()}`);
+    const r = await fetch(url, { cache:"no-store" });
+    const j = await r.json().catch(()=>({}));
+    return { ok: r.ok, json: j };
+  }
+
   async function waitAndCreditSilent(intentId){
     const raw = getWalletRawLS();
     if (!raw) return;
-    try{ localStorage.setItem("lastDepositIntentId", String(intentId)); }catch{}
 
     for (let i=0;i<80;i++){
       const { ok, json } = await confirmDepositTry(intentId, raw);
       if (ok && json?.status === "credited"){
-        try{ localStorage.removeItem("lastDepositIntentId"); }catch{}
         await refreshBalance();
-        setTimeout(refreshBalance, 350);
         showPopup("TON", `Баланс пополнен: +${json.creditedTon} TON`);
         return;
       }
@@ -689,12 +640,9 @@
     }
   }
 
-  // =========================
-  // TON modal UI
-  // =========================
+  // TON modals
   const tonModal = $("tonModal");
   const depositModal = $("depositModal");
-
   function openTonModal(){ tonModal.classList.add("open"); }
   function closeTonModal(){ tonModal.classList.remove("open"); }
   function openDepositModal(){ depositModal.classList.add("open"); }
@@ -710,19 +658,13 @@
 
   async function syncWalletUI(){
     const raw = getWalletRawLS();
-    const walletShortEl = $("walletShort");
     const walletStatus = $("walletStatus");
-
     if (!raw){
-      walletShortEl.textContent = "—";
       walletStatus.textContent = "Not connected";
       return;
     }
     const fr = await getWalletFriendlyLS();
-    const show = fr || raw;
-    const s = shortAddr(show);
-    walletShortEl.textContent = s;
-    walletStatus.textContent = s;
+    walletStatus.textContent = shortAddr(fr || raw);
   }
 
   window.addEventListener("wallet_changed", async () => {
@@ -749,14 +691,15 @@
 
   $("actionDeposit").onclick = async () => {
     if (!getWalletRawLS()){ showPopup("TON", "Сначала привяжи кошелёк."); return; }
+    $("depositHint").textContent = "";
     openDepositModal();
   };
 
   $("actionWithdraw").onclick = () => showPopup("TON", "Вывод добавим позже.");
 
-  // TOPBAR: Пополнить = открываем депозит (как ты хотел)
   $("btnTopup").onclick = async () => {
     if (!getWalletRawLS()){ openTonModal(); showPopup("TON", "Сначала привяжи кошелёк."); return; }
+    $("depositHint").textContent = "";
     openDepositModal();
   };
 
@@ -770,17 +713,9 @@
     if (!window.__tonUI?.sendTransaction){ showPopup("TON", "TonConnect UI не готов."); return; }
 
     try{
-      $("depositHint").textContent = "Создаю intent…";
+      // без "создаю intent" — просто тихо
+      const intent = await apiPost("/api/deposit_intent?t=" + Date.now(), { amountTon, address: raw });
 
-      // 1) deposit_intent (как в твоём файле: amountTon + address) :contentReference[oaicite:6]{index=6}
-      const intent = await apiPost("/api/deposit_intent?t=" + Date.now(), {
-        amountTon,
-        address: raw
-      });
-
-      $("depositHint").textContent = "Открой кошелёк и подтверди транзакцию…";
-
-      // 2) sendTransaction (payload = commentToBocBase64(comment)) — как у тебя было :contentReference[oaicite:7]{index=7}
       await window.__tonUI.sendTransaction({
         validUntil: Math.floor(Date.now()/1000) + 300,
         messages:[{
@@ -791,72 +726,151 @@
       });
 
       closeDepositModal();
-      showPopup("TON", "Транзакция отправлена. Ждём подтверждение…");
 
-      // 3) confirm_deposit polling (как раньше: ждать и начислить) :contentReference[oaicite:8]{index=8}
+      showPopup(
+        "TON",
+        "Транзакция отправлена, ждём подтверждения.\n\nНе обновляйте страницу и не закрывайте окно."
+      );
+
       setTimeout(() => waitAndCreditSilent(intent.intentId), 8000);
-
     }catch(e){
-      console.log(e);
-      $("depositHint").textContent = "Оплата отменена или ошибка кошелька.";
       showPopup("TON", "Транзакция отменена или ошибка кошелька.");
     }
   };
 
-  // =========================
-  // Bets (LONG/SHORT)
-  // =========================
+  // Bets / game UI
+  let pos = null;
+  function setHint(text){ $("hint").textContent = text || ""; }
+  function setPosStatus(){
+    if(!pos){ $("posStatus").textContent = "—"; return; }
+    $("posStatus").textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON`;
+  }
+
+  let bettingOpen = false;
+
+  function setButtonsEnabled(on){
+    const b1 = $("btnLong");
+    const b2 = $("btnShort");
+    if (on){
+      b1.classList.remove("disabled");
+      b2.classList.remove("disabled");
+      bettingOpen = true;
+    } else {
+      b1.classList.add("disabled");
+      b2.classList.add("disabled");
+      bettingOpen = false;
+    }
+  }
+
   async function place(side){
-    if(!currentRound?.roundId){
-      $("hint").textContent = "Нет активного раунда. Подожди…";
+    if(!bettingOpen){
+      return;
+    }
+    const raw = getWalletRawLS();
+    if(!raw){
+      openTonModal();
+      showPopup("TON", "Сначала привяжи кошелёк.");
       return;
     }
     try{
-      $("hint").textContent = "Отправляю ставку…";
-      const payload = {
-        side,               // "long" | "short" (потом подгоним под твой API, если нужно)
+      await apiPost("/api/bet_place?t=" + Date.now(), {
+        side,
         amountTon: selectedAmt,
-        roundId: currentRound.roundId,
-        address: getWalletRawLS() || null
-      };
-      await apiPost("/api/bet_place?t=" + Date.now(), payload);
+        roundId: currentRound?.roundId,
+        address: raw
+      });
 
       pos = { side, amount: selectedAmt, roundId: currentRound.roundId };
       setPosStatus();
-      $("hint").textContent = "Ставка принята ✅";
+      setHint("Ставка принята");
       await refreshBalance();
     }catch(e){
-      console.error(e);
-      $("hint").textContent = "Ошибка ставки: " + e.message;
-      $("netStatus").textContent = "error";
+      // тихо и без лишнего текста
+      setHint("Ошибка ставки");
     }
   }
 
   $("btnLong").onclick = () => place("long");
   $("btnShort").onclick = () => place("short");
 
-  // =========================
-  // Boot
-  // =========================
-  initChart();
-  setPosStatus();
+  // Round sync + countdown
+  function serverNow(){
+    return Date.now() + timeOffsetMs;
+  }
 
-  async function boot(){
-    try{
-      await Promise.all([loadState(), loadSeries()]);
-      await syncWalletUI();
-      await resumeDepositsSilently();
-      await refreshBalance();
-    }catch(e){
-      console.error(e);
-      $("netStatus").textContent = "offline";
+  function updateBetCountdown(){
+    if(!currentRound) return;
+
+    const nowS = serverNow();
+    const startAt = currentRound.startAt;
+    const endAt = currentRound.endAt;
+    const nextAt = currentRound.nextAt;
+
+    // мы показываем только окно ставок 7 сек
+    if (nowS >= startAt && nowS < endAt){
+      const leftMs = endAt - nowS;
+      const secLeft = Math.max(0, Math.ceil(leftMs/1000));
+
+      cd.classList.add("show");
+      cdNum.textContent = String(secLeft);
+
+      // прогресс по кругу (7 -> 0)
+      const progress = leftMs / betMs;
+      setRing(progress);
+      setRingColor(secLeft);
+
+      setButtonsEnabled(true);
+      setHint(""); // без лишнего
+    } else {
+      cd.classList.remove("show");
+      setButtonsEnabled(false);
+
+      // после ставок идёт 12 сек "игры" — ничего не пишем
+      // когда раунд закончился — сбрасываем позицию
+      if (nowS >= nextAt){
+        pos = null;
+        setPosStatus();
+      }
     }
   }
 
-  boot();
-  setInterval(() => loadState().catch(()=>{$("netStatus").textContent="offline";}), 1000);
-  setInterval(() => loadSeries().catch(()=>{$("netStatus").textContent="offline";}), 1500);
-  setInterval(() => refreshBalance().catch(()=>{}), 5000);
+  // Load state/series
+  async function loadState(){
+    const data = await apiGet("/api/state?t=" + Date.now());
+    timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
+    currentRound = data.round;
+    betMs = data.betMs || 7000;
+    roundMs = data.roundMs || 19000;
+  }
+
+  async function loadSeries(){
+    const data = await apiGet("/api/series?t=" + Date.now());
+    const series = toChartData(data.series);
+    if(series.length){
+      areaSeries.setData(series);
+    }
+  }
+
+  // boot
+  initChart();
+  setPosStatus();
+  setHint("");
+  setButtonsEnabled(false);
+
+  (async function boot(){
+    try{
+      await loadState();
+      await loadSeries();
+      await syncWalletUI();
+      await resumeDepositsSilently();
+      await refreshBalance();
+    }catch{}
+  })();
+
+  setInterval(() => loadState().catch(()=>{}), 500);
+  setInterval(() => loadSeries().catch(()=>{}), 1200);
+  setInterval(() => updateBetCountdown(), 120);
+  setInterval(() => refreshBalance().catch(()=>{}), 6000);
 </script>
 </body>
 </html>
