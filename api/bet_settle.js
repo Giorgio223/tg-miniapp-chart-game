@@ -8,11 +8,11 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const BET_MS = 9000;
-const POST_DELAY_MS = 6000;
-const ROUND_MS = BET_MS + POST_DELAY_MS;
+const BET_MS = 7000;
+const PLAY_MS = 12000;
+const ROUND_MS = BET_MS + PLAY_MS;
 
-// выплата (1.9x) — можно поменять позже
+// коэффициент выплаты победителю
 const PAYOUT_MULT = 1.9;
 
 function canonicalFriendly(addr) {
@@ -43,8 +43,10 @@ export default async function handler(req, res) {
 
     const now = Date.now();
     const startAt = rid * ROUND_MS;
-    const endAt = startAt + BET_MS;
-    if (now < endAt) return res.status(400).json({ error: "too_early" });
+    const finishAt = startAt + ROUND_MS;
+
+    // разрешаем settle только после окончания всего раунда (19 сек)
+    if (now < finishAt) return res.status(400).json({ error: "too_early" });
 
     const betKey = `bet:${rid}:${friendly}`;
     const betRaw = await redis.get(betKey);
@@ -54,13 +56,19 @@ export default async function handler(req, res) {
     const already = await redis.get(settledKey);
     if (already) return res.status(200).json({ ok: true, status: "already_settled" });
 
-    const bet = typeof betRaw === "string" ? JSON.parse(betRaw) : betRaw;
+    const bet = JSON.parse(betRaw);
 
-    // фиксируем старт/энд цену
-    const startPrice = Number(await redis.get(`chart:roundStart:${rid}`));
+    // фиксируем старт/финиш цену
+    const startKey = `chart:roundStart:${rid}`;
     const endKey = `chart:roundEnd:${rid}`;
-    let endPrice = Number(await redis.get(endKey));
 
+    let startPrice = Number(await redis.get(startKey));
+    if (!Number.isFinite(startPrice)) {
+      startPrice = await getLastPrice();
+      await redis.set(startKey, String(startPrice), { ex: 24 * 60 * 60 });
+    }
+
+    let endPrice = Number(await redis.get(endKey));
     if (!Number.isFinite(endPrice)) {
       endPrice = await getLastPrice();
       await redis.set(endKey, String(endPrice), { ex: 24 * 60 * 60 });
@@ -81,10 +89,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
-      roundId: rid,
-      startPrice,
-      endPrice,
-      winnerSide,
+      status: "settled",
       win,
       creditedTon: creditedNano / 1e9
     });
