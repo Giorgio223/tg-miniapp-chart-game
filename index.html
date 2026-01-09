@@ -172,34 +172,19 @@
       position: relative;
       filter: drop-shadow(0 8px 18px rgba(0,0,0,.35));
     }
-    .tri.up{
-      border-bottom: 12px solid var(--green);
-    }
-    .tri.down{
-      border-top: 12px solid var(--red);
-    }
-    /* белый внутренний треугольник */
+    .tri.up{ border-bottom: 12px solid var(--green); }
+    .tri.down{ border-top: 12px solid var(--red); }
     .tri::after{
       content:"";
       position:absolute;
       left:-5px;
-      top:-10px;
       width:0;height:0;
       border-left: 5px solid transparent;
       border-right: 5px solid transparent;
     }
-    .tri.up::after{
-      top:2px;
-      border-bottom: 9px solid rgba(255,255,255,.92);
-    }
-    .tri.down::after{
-      top:-11px;
-      border-top: 9px solid rgba(255,255,255,.92);
-    }
-    .pctText{
-      min-width: 42px;
-      text-align:right;
-    }
+    .tri.up::after{ top:2px; border-bottom: 9px solid rgba(255,255,255,.92); }
+    .tri.down::after{ top:-11px; border-top: 9px solid rgba(255,255,255,.92); }
+    .pctText{ min-width: 42px; text-align:right; }
 
     /* Result toast */
     .toast{
@@ -491,6 +476,7 @@
   </div>
 
 <script>
+document.addEventListener("DOMContentLoaded", () => {
   const tg = window.Telegram?.WebApp;
   try { tg?.ready(); tg?.expand(); } catch(e){}
 
@@ -563,14 +549,10 @@
     lineSeries = chart.addLineSeries({
       lineWidth: 2,
       color: "rgba(49,209,124,.95)",
-      priceFormat: {
-        type: "custom",
-        formatter: (v) => `${Number(v).toFixed(0)}%`
-      }
+      priceFormat: { type: "custom", formatter: (v) => `${Number(v).toFixed(0)}%` }
     });
 
-    // фиксируем шкалу -100..100 через “невидимые” точки (чтобы не прыгала)
-    // (реально добавим отдельный series для границ)
+    // фикс шкалы -100..100
     const boundSeries = chart.addLineSeries({
       color: "rgba(0,0,0,0)",
       lineWidth: 1,
@@ -578,12 +560,8 @@
       priceLineVisible: false
     });
     const now = Math.floor(Date.now()/1000);
-    boundSeries.setData([
-      { time: now - 2, value: -100 },
-      { time: now - 1, value: 100 },
-    ]);
+    boundSeries.setData([{ time: now - 2, value: -100 }, { time: now - 1, value: 100 }]);
 
-    // линии на шкале: 100,50,0,-50,-100
     function addPL(val, title){
       return lineSeries.createPriceLine({
         price: val,
@@ -604,7 +582,6 @@
   }
 
   function toChartData(series){
-    // series: [[ts_ms, pct], ...]
     return (series || []).map(([ts, pct]) => ({
       time: Math.floor(ts / 1000),
       value: Number(pct)
@@ -612,33 +589,25 @@
   }
 
   // =========================
-  // Round sync + countdown
+  // Countdown (исправлено: НЕТ дублей cdNum/cdRing)
   // =========================
-  let timeOffsetMs = 0;
-  let currentRound = null;
-  let betMs = 7000;
-  let roundMs = 19000;
+  const cdEl = $("countdown");
+  const cdNumEl = $("cdNum");
+  const cdRingEl = $("cdRing");
 
-  function serverNow(){
-    return Date.now() + timeOffsetMs;
-  }
-
-  const cd = $("countdown");
-  const cdNum = $("cdNum");
-  const cdRing = $("cdRing");
   const R = 46;
   const CIRC = 2 * Math.PI * R;
-  cdRing.setAttribute("stroke-dasharray", String(CIRC));
-  cdRing.setAttribute("stroke-dashoffset", "0");
+  cdRingEl.setAttribute("stroke-dasharray", String(CIRC));
+  cdRingEl.setAttribute("stroke-dashoffset", "0");
 
   function setRing(progress01){
     const off = CIRC * (1 - Math.max(0, Math.min(1, progress01)));
-    cdRing.setAttribute("stroke-dashoffset", String(off));
+    cdRingEl.setAttribute("stroke-dashoffset", String(off));
   }
   function setRingColor(secLeft){
-    if (secLeft >= 5) cdRing.setAttribute("stroke", "rgba(49,209,124,.95)");
-    else if (secLeft >= 3) cdRing.setAttribute("stroke", "rgba(255,204,51,.95)");
-    else cdRing.setAttribute("stroke", "rgba(255,77,77,.95)");
+    if (secLeft >= 5) cdRingEl.setAttribute("stroke", "rgba(49,209,124,.95)");
+    else if (secLeft >= 3) cdRingEl.setAttribute("stroke", "rgba(255,204,51,.95)");
+    else cdRingEl.setAttribute("stroke", "rgba(255,77,77,.95)");
   }
 
   // =========================
@@ -648,7 +617,6 @@
     const row = $("histRow");
     row.innerHTML = "";
     const arr = Array.isArray(items) ? items : [];
-    // показываем справа-налево? как в слотах обычно — новые слева
     for (const it of arr.slice(0, 12)) {
       const pct = Number(it.pct || 0);
       const wrap = document.createElement("div");
@@ -659,8 +627,7 @@
 
       const txt = document.createElement("div");
       txt.className = "pctText mono";
-      const s = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
-      txt.textContent = s;
+      txt.textContent = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
 
       wrap.appendChild(tri);
       wrap.appendChild(txt);
@@ -669,7 +636,7 @@
   }
 
   // =========================
-  // Toast result
+  // Toast
   // =========================
   const toast = $("toast");
   let toastTimer = null;
@@ -740,7 +707,6 @@
       const tonUI = new TonConnectUI({
         manifestUrl: location.origin + "/tonconnect-manifest.json",
         actionsConfiguration: {
-          // если надо вернуть в бота — впиши сюда:
           // twaReturnUrl: "https://t.me/YOUR_BOT?startapp=1"
         }
       });
@@ -924,6 +890,13 @@
   // =========================
   // Bet UI + settle
   // =========================
+  let currentRound = null;
+  let betMs = 7000;
+  let roundMs = 19000;
+  let timeOffsetMs = 0;
+
+  function serverNow(){ return Date.now() + timeOffsetMs; }
+
   let pos = null;
   function setHint(text){ $("hint").textContent = text || ""; }
   function setPosStatus(){
@@ -976,16 +949,14 @@
   $("btnLong").onclick = () => place("long");
   $("btnShort").onclick = () => place("short");
 
-  // автосеттл раз в раунд
   let lastSettledRound = null;
   async function trySettleIfNeeded(){
     if(!pos || !currentRound) return;
 
     const nowS = serverNow();
-    const finishAt = currentRound.nextAt; // конец раунда
+    const finishAt = currentRound.nextAt;
     if (nowS < finishAt) return;
 
-    // только один раз на раунд
     if (lastSettledRound === pos.roundId) return;
 
     const raw = getWalletRawLS();
@@ -997,44 +968,22 @@
         roundId: pos.roundId
       });
 
-      if (r?.status === "pending") return; // подождём
+      if (r?.status === "pending") return;
 
       lastSettledRound = pos.roundId;
       await refreshBalance();
 
       const pct = Number(r.pct);
       const sPct = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
-
-      // WIN/LOSE текст (в зависимости от profitTon)
       const profit = Number(r.profitTon || 0);
+
       if (profit >= 0) showToast("win", `WIN ${sPct}`);
       else showToast("lose", `LOSE ${sPct}`);
 
-      // после результата — сброс позиции
       pos = null;
       setPosStatus();
       setHint("");
-    }catch(e){
-      // молча
-    }
-  }
-
-  // Countdown UI
-  const cdNum = $("cdNum");
-  const cdRing = $("cdRing");
-  const R = 46;
-  const CIRC = 2 * Math.PI * R;
-  cdRing.setAttribute("stroke-dasharray", String(CIRC));
-  cdRing.setAttribute("stroke-dashoffset", "0");
-
-  function setRing(progress01){
-    const off = CIRC * (1 - Math.max(0, Math.min(1, progress01)));
-    cdRing.setAttribute("stroke-dashoffset", String(off));
-  }
-  function setRingColor(secLeft){
-    if (secLeft >= 5) cdRing.setAttribute("stroke", "rgba(49,209,124,.95)");
-    else if (secLeft >= 3) cdRing.setAttribute("stroke", "rgba(255,204,51,.95)");
-    else cdRing.setAttribute("stroke", "rgba(255,77,77,.95)");
+    }catch(e){}
   }
 
   function updateBetCountdown(){
@@ -1048,8 +997,8 @@
       const leftMs = endAt - nowS;
       const secLeft = Math.max(0, Math.ceil(leftMs/1000));
 
-      $("countdown").classList.add("show");
-      cdNum.textContent = String(secLeft);
+      cdEl.classList.add("show");
+      cdNumEl.textContent = String(secLeft);
 
       const progress = leftMs / betMs;
       setRing(progress);
@@ -1057,22 +1006,17 @@
 
       setButtonsEnabled(true);
     } else {
-      $("countdown").classList.remove("show");
+      cdEl.classList.remove("show");
       setButtonsEnabled(false);
     }
   }
 
-  // =========================
-  // Load state/series
-  // =========================
   async function loadState(){
     const data = await apiGet("/api/state?t=" + Date.now());
     timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
     currentRound = data.round;
     betMs = data.betMs || 7000;
     roundMs = data.roundMs || 19000;
-
-    // история
     renderHistory(data.history || []);
   }
 
@@ -1097,10 +1041,7 @@
       await syncWalletUI();
       await resumeDepositsSilently();
       await refreshBalance();
-    }catch(e){
-      // если график не рисуется — значит api/series не отдаёт или ошибка.
-      // но тебе в UI это не показываем.
-    }
+    }catch(e){}
   })();
 
   setInterval(() => loadState().catch(()=>{}), 600);
@@ -1108,6 +1049,7 @@
   setInterval(() => updateBetCountdown(), 120);
   setInterval(() => trySettleIfNeeded(), 600);
   setInterval(() => refreshBalance().catch(()=>{}), 6500);
+});
 </script>
 </body>
 </html>
