@@ -58,6 +58,7 @@ export default async function handler(req, res) {
     const curBal = Number(await redis.get(balKey) || "0");
     if (!Number.isFinite(curBal) || curBal < amountNano) return res.status(400).json({ error: "insufficient" });
 
+    // списываем ставку
     await redis.set(balKey, String(curBal - amountNano));
 
     const bet = {
@@ -69,6 +70,7 @@ export default async function handler(req, res) {
     };
 
     await redis.set(betKey, JSON.stringify(bet), { ex: 24 * 60 * 60 });
+
     return res.status(200).json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: "bet_place_error", message: String(e) });
