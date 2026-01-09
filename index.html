@@ -5,9 +5,28 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
   <title>Chart Game</title>
 
+  <!-- Telegram + TonConnect -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
+
+  <!-- Lightweight Charts (основной) -->
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <!-- Lightweight Charts (резервный CDN, если unpkg блокируется) -->
+  <script>
+    (function(){
+      function loadFallback(){
+        // jsdelivr fallback
+        var s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/lightweight-charts/dist/lightweight-charts.standalone.production.js";
+        s.async = true;
+        document.head.appendChild(s);
+      }
+      // если unpkg не загрузился за 1500мс — пробуем fallback
+      setTimeout(function(){
+        if (!window.LightweightCharts) loadFallback();
+      }, 1500);
+    })();
+  </script>
 
   <style>
     :root{
@@ -99,6 +118,29 @@
       height:360px;
       background: radial-gradient(900px 520px at 50% 0%, rgba(124,77,255,.30), rgba(124,77,255,.08) 45%, rgba(0,0,0,.10) 70%);
     }
+
+    /* overlay for chart errors */
+    .chartError{
+      position:absolute; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      padding:16px;
+      background: rgba(0,0,0,.25);
+      backdrop-filter: blur(8px);
+      z-index: 60;
+    }
+    .chartErrorBox{
+      width:min(640px, 100%);
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.25);
+      border-radius: 16px;
+      padding:14px 14px;
+      box-shadow: 0 18px 45px rgba(0,0,0,.45);
+      color: rgba(242,239,255,.92);
+      font-weight: 900;
+      line-height: 1.35;
+      font-size: 13px;
+    }
+    .chartErrorBox small{display:block; margin-top:8px; font-weight:800; opacity:.75}
 
     /* Countdown circle overlay */
     .countdown{
@@ -320,7 +362,6 @@
     .row2{display:flex;gap:10px;margin-top:12px;}
     .row2 .sheetAction{flex:1 1 0;justify-content:center;}
 
-    /* hide any accidental tradingview links/logo */
     a[href*="tradingview"], a[href*="TradingView"]{display:none!important;}
   </style>
 </head>
@@ -344,7 +385,7 @@
 
     <div class="grid">
       <!-- Chart card -->
-      <div class="card">
+      <div class="card" id="chartCard">
         <div id="chart"></div>
 
         <!-- Countdown overlay -->
@@ -476,628 +517,688 @@
   </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", () => {
-  const tg = window.Telegram?.WebApp;
-  try { tg?.ready(); tg?.expand(); } catch(e){}
-
-  // ✅ Всегда абсолютная база
-  const API_BASE = window.API_BASE || location.origin;
-  const apiUrl = (path) => new URL(path, API_BASE).toString();
-
+(function(){
   const $ = (id) => document.getElementById(id);
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-  function showPopup(title, message){
-    if (tg?.showPopup) tg.showPopup({ title, message, buttons:[{type:"ok"}] });
-    else alert(`${title}\n\n${message}`);
+  function showChartError(message){
+    const card = $("chartCard");
+    if(!card) return;
+    // удаляем предыдущую
+    const old = card.querySelector(".chartError");
+    if(old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.className = "chartError";
+    overlay.innerHTML = `
+      <div class="chartErrorBox">
+        Ошибка графика: ${String(message || "unknown")}
+        <small>Открой DevTools → Network и проверь загрузку lightweight-charts (unpkg/jsdelivr) и ответы /api/state /api/series.</small>
+      </div>
+    `;
+    card.appendChild(overlay);
   }
 
-  // BONUS
-  const bonusOverlay = $("bonusOverlay");
-  $("btnBonus").onclick = () => bonusOverlay.style.display = "flex";
-  $("btnBonusClose").onclick = () => bonusOverlay.style.display = "none";
-  bonusOverlay.addEventListener("click", (e) => { if(e.target === bonusOverlay) bonusOverlay.style.display = "none"; });
+  function clearChartError(){
+    const card = $("chartCard");
+    if(!card) return;
+    const old = card.querySelector(".chartError");
+    if(old) old.remove();
+  }
 
-  // Chips
-  let selectedAmt = 0.10;
-  $("chips").addEventListener("click", (e) => {
-    const chip = e.target.closest(".chip");
-    if(!chip) return;
-    document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-    chip.classList.add("active");
-    selectedAmt = Number(chip.dataset.amt || "0.1");
-    $("betAmt").textContent = selectedAmt.toFixed(2);
-  });
+  // Ждём полной загрузки окна (важно для размеров контейнера)
+  window.addEventListener("load", () => {
+    const tg = window.Telegram?.WebApp;
+    try { tg?.ready?.(); tg?.expand?.(); } catch {}
 
-  async function apiGet(path){
-    const url = apiUrl(path);
-    const r = await fetch(url, { cache: "no-store" });
-    const text = await r.text();
-    let j = null;
-    try { j = JSON.parse(text); } catch { j = { raw: text }; }
+    // ✅ Абсолютный API base
+    const API_BASE = window.API_BASE || location.origin;
+    const apiUrl = (path) => new URL(path, API_BASE).toString();
 
-    if(!r.ok){
-      console.error("API GET FAIL:", path, r.status, j);
-      throw new Error(`${path} ${r.status}`);
+    async function apiGet(path){
+      const r = await fetch(apiUrl(path), { cache: "no-store" });
+      const txt = await r.text();
+      let j = null;
+      try{ j = JSON.parse(txt); }catch{ j = { raw: txt }; }
+      if(!r.ok){
+        console.error("API GET FAIL:", path, r.status, j);
+        throw new Error(path + " " + r.status);
+      }
+      return j;
     }
-    return j;
-  }
 
-  async function apiPost(path, body){
-    const url = apiUrl(path);
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body || {})
-    });
-    const text = await r.text();
-    let j = null;
-    try { j = JSON.parse(text); } catch { j = { raw: text }; }
-
-    if(!r.ok){
-      console.error("API POST FAIL:", path, r.status, j);
-      throw new Error(`${path} ${r.status}`);
+    async function apiPost(path, body){
+      const r = await fetch(apiUrl(path), {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(body || {})
+      });
+      const txt = await r.text();
+      let j = null;
+      try{ j = JSON.parse(txt); }catch{ j = { raw: txt }; }
+      if(!r.ok){
+        console.error("API POST FAIL:", path, r.status, j);
+        throw new Error(path + " " + r.status);
+      }
+      return j;
     }
-    return j;
-  }
 
-  // =========================
-  // Chart (Area + fallback + timestamps)
-  // =========================
-  let chart, series;
-  let didSetInitialData = false;
+    // =========================
+    // CHART (100% не пустой + fallback + area + resize)
+    // =========================
+    let chart = null;
+    let area = null;
+    let didSetAnyData = false;
 
-  function initChart(){
-    const el = $("chart");
-    chart = LightweightCharts.createChart(el, {
-      autoSize: true,
-      layout: { background: { type: "solid", color: "transparent" }, textColor: "rgba(242,239,255,.75)" },
-      grid: { vertLines: { color: "rgba(255,255,255,.06)" }, horzLines: { color: "rgba(255,255,255,.06)" } },
-      rightPriceScale: {
-        borderColor: "rgba(255,255,255,.12)",
-        textColor: "rgba(242,239,255,.70)",
-        scaleMargins: { top: 0.12, bottom: 0.12 }
-      },
-      timeScale: { borderColor: "rgba(255,255,255,.12)", timeVisible: true, secondsVisible: true },
-      crosshair: { vertLine: { color: "rgba(124,77,255,.45)" }, horzLine: { color: "rgba(124,77,255,.35)" } }
-    });
+    function normalizeTsToSec(ts){
+      const n = Number(ts);
+      if(!Number.isFinite(n)) return Math.floor(Date.now()/1000);
+      if(n > 2e12) return Math.floor(n/1000); // ms
+      return Math.floor(n); // sec
+    }
+    function toChartData(seriesArr){
+      const arr = Array.isArray(seriesArr) ? seriesArr : [];
+      return arr
+        .map(([ts, pct]) => ({ time: normalizeTsToSec(ts), value: Number(pct) }))
+        .filter(p => Number.isFinite(p.time) && Number.isFinite(p.value))
+        .sort((a,b) => a.time - b.time);
+    }
 
-    // ✅ как на примере: линия + заливка
-    series = chart.addAreaSeries({
-      lineWidth: 2,
-      lineColor: "rgba(49,209,124,.95)",
-      topColor: "rgba(49,209,124,.28)",
-      bottomColor: "rgba(49,209,124,0.00)",
-      priceFormat: { type: "custom", formatter: (v) => `${Number(v).toFixed(0)}%` }
-    });
+    function initChartOrError(){
+      // ждём, пока LightweightCharts реально появился (unpkg или fallback jsdelivr)
+      if(!window.LightweightCharts?.createChart){
+        showChartError("LightweightCharts не загрузился (CDN заблокирован или ошибка сети).");
+        return false;
+      }
 
-    // фикс шкалы -100..100
-    const boundSeries = chart.addLineSeries({
-      color: "rgba(0,0,0,0)",
-      lineWidth: 1,
-      lastValueVisible: false,
-      priceLineVisible: false
-    });
-    const now = Math.floor(Date.now()/1000);
-    boundSeries.setData([{ time: now - 2, value: -100 }, { time: now - 1, value: 100 }]);
+      const el = $("chart");
+      if(!el){ showChartError("Не найден элемент #chart"); return false; }
 
-    function addPL(val, title){
-      return series.createPriceLine({
-        price: val,
+      // чистим
+      el.innerHTML = "";
+      clearChartError();
+
+      // НЕ autoSize (иногда 0x0): задаём размеры + resize observer
+      const W = Math.max(320, el.clientWidth || 900);
+      const H = 360;
+
+      chart = LightweightCharts.createChart(el, {
+        width: W,
+        height: H,
+        layout: { background: { type:"solid", color:"transparent" }, textColor: "rgba(242,239,255,.75)" },
+        grid: { vertLines: { color: "rgba(255,255,255,.06)" }, horzLines: { color: "rgba(255,255,255,.06)" } },
+        rightPriceScale: {
+          borderColor: "rgba(255,255,255,.12)",
+          textColor: "rgba(242,239,255,.70)",
+          scaleMargins: { top: 0.12, bottom: 0.12 }
+        },
+        timeScale: { borderColor: "rgba(255,255,255,.12)", timeVisible: true, secondsVisible: true },
+        crosshair: { vertLine: { color: "rgba(124,77,255,.45)" }, horzLine: { color: "rgba(124,77,255,.35)" } }
+      });
+
+      // ✅ как на казино: area
+      area = chart.addAreaSeries({
+        lineWidth: 2,
+        lineColor: "rgba(49,209,124,.95)",
+        topColor: "rgba(49,209,124,.28)",
+        bottomColor: "rgba(49,209,124,0.00)",
+        priceFormat: { type:"custom", formatter: (v) => `${Number(v).toFixed(0)}%` }
+      });
+
+      // фикс шкалы -100..100
+      const bound = chart.addLineSeries({
+        color: "rgba(0,0,0,0)",
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+      const now = Math.floor(Date.now()/1000);
+      bound.setData([{ time: now-2, value:-100 }, { time: now-1, value:100 }]);
+
+      // уровни
+      const mkPL = (v,t) => area.createPriceLine({
+        price: v,
         color: "rgba(255,255,255,.14)",
         lineWidth: 1,
         lineStyle: LightweightCharts.LineStyle.Dotted,
         axisLabelVisible: true,
-        title
+        title: t
+      });
+      mkPL(100,"100%");
+      mkPL(50,"50%");
+      mkPL(0,"0%");
+      mkPL(-50,"-50%");
+      mkPL(-100,"-100%");
+
+      // ✅ fallback — график точно виден
+      area.setData([
+        { time: now-6, value: 0 },
+        { time: now-4, value: 6 },
+        { time: now-2, value: -4 },
+        { time: now, value: 2 }
+      ]);
+      chart.timeScale().fitContent();
+      didSetAnyData = true;
+
+      // resize observer
+      const ro = new ResizeObserver(() => {
+        try{
+          const w = Math.max(320, el.clientWidth || 900);
+          chart.resize(w, H);
+        }catch{}
+      });
+      ro.observe(el);
+
+      return true;
+    }
+
+    // =========================
+    // Countdown (без изменений, но надёжно)
+    // =========================
+    const cdEl = $("countdown");
+    const cdNumEl = $("cdNum");
+    const cdRingEl = $("cdRing");
+
+    const R = 46;
+    const CIRC = 2 * Math.PI * R;
+    if (cdRingEl){
+      cdRingEl.setAttribute("stroke-dasharray", String(CIRC));
+      cdRingEl.setAttribute("stroke-dashoffset", "0");
+    }
+
+    function setRing(progress01){
+      if(!cdRingEl) return;
+      const off = CIRC * (1 - Math.max(0, Math.min(1, progress01)));
+      cdRingEl.setAttribute("stroke-dashoffset", String(off));
+    }
+    function setRingColor(secLeft){
+      if(!cdRingEl) return;
+      if (secLeft >= 5) cdRingEl.setAttribute("stroke", "rgba(49,209,124,.95)");
+      else if (secLeft >= 3) cdRingEl.setAttribute("stroke", "rgba(255,204,51,.95)");
+      else cdRingEl.setAttribute("stroke", "rgba(255,77,77,.95)");
+    }
+
+    // History
+    function renderHistory(items){
+      const row = $("histRow");
+      if(!row) return;
+      row.innerHTML = "";
+      const arr = Array.isArray(items) ? items : [];
+      for (const it of arr.slice(0, 12)) {
+        const pct = Number(it.pct || 0);
+        const wrap = document.createElement("div");
+        wrap.className = "histItem";
+
+        const tri = document.createElement("div");
+        tri.className = "tri " + (pct >= 0 ? "up" : "down");
+
+        const txt = document.createElement("div");
+        txt.className = "pctText mono";
+        txt.textContent = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
+
+        wrap.appendChild(tri);
+        wrap.appendChild(txt);
+        row.appendChild(wrap);
+      }
+    }
+
+    // Toast
+    const toast = $("toast");
+    let toastTimer = null;
+    function showToast(kind, text){
+      if(!toast) return;
+      toast.className = "toast show " + (kind || "");
+      toast.textContent = text;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.className = "toast";
+        toast.textContent = "";
+      }, 1500);
+    }
+
+    // =========================
+    // UI: BONUS
+    // =========================
+    const bonusOverlay = $("bonusOverlay");
+    if ($("btnBonus")) $("btnBonus").onclick = () => bonusOverlay.style.display = "flex";
+    if ($("btnBonusClose")) $("btnBonusClose").onclick = () => bonusOverlay.style.display = "none";
+    if (bonusOverlay) bonusOverlay.addEventListener("click", (e) => {
+      if(e.target === bonusOverlay) bonusOverlay.style.display = "none";
+    });
+
+    // =========================
+    // UI: Chips
+    // =========================
+    let selectedAmt = 0.10;
+    if ($("chips")) {
+      $("chips").addEventListener("click", (e) => {
+        const chip = e.target.closest(".chip");
+        if(!chip) return;
+        document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        selectedAmt = Number(chip.dataset.amt || "0.1");
+        if ($("betAmt")) $("betAmt").textContent = selectedAmt.toFixed(2);
       });
     }
-    addPL(100, "100%");
-    addPL(50, "50%");
-    addPL(0, "0%");
-    addPL(-50, "-50%");
-    addPL(-100, "-100%");
 
-    // ✅ fallback — чтобы не было пусто вообще никогда
-    const fNow = Math.floor(Date.now()/1000);
-    series.setData([
-      { time: fNow - 3, value: 0 },
-      { time: fNow - 2, value: 0 },
-      { time: fNow - 1, value: 0 }
-    ]);
-    didSetInitialData = true;
-
-    new ResizeObserver(() => chart.timeScale().fitContent()).observe(el);
-  }
-
-  function normalizeTsToSec(ts){
-    const n = Number(ts);
-    if(!Number.isFinite(n)) return Math.floor(Date.now()/1000);
-    if (n > 2e12) return Math.floor(n / 1000); // ms
-    return Math.floor(n); // sec
-  }
-
-  function toChartData(seriesArr){
-    const arr = Array.isArray(seriesArr) ? seriesArr : [];
-    return arr
-      .map(([ts, pct]) => ({ time: normalizeTsToSec(ts), value: Number(pct) }))
-      .filter(p => Number.isFinite(p.time) && Number.isFinite(p.value))
-      .sort((a,b) => a.time - b.time);
-  }
-
-  // =========================
-  // Countdown
-  // =========================
-  const cdEl = $("countdown");
-  const cdNumEl = $("cdNum");
-  const cdRingEl = $("cdRing");
-
-  const R = 46;
-  const CIRC = 2 * Math.PI * R;
-  cdRingEl.setAttribute("stroke-dasharray", String(CIRC));
-  cdRingEl.setAttribute("stroke-dashoffset", "0");
-
-  function setRing(progress01){
-    const off = CIRC * (1 - Math.max(0, Math.min(1, progress01)));
-    cdRingEl.setAttribute("stroke-dashoffset", String(off));
-  }
-  function setRingColor(secLeft){
-    if (secLeft >= 5) cdRingEl.setAttribute("stroke", "rgba(49,209,124,.95)");
-    else if (secLeft >= 3) cdRingEl.setAttribute("stroke", "rgba(255,204,51,.95)");
-    else cdRingEl.setAttribute("stroke", "rgba(255,77,77,.95)");
-  }
-
-  // =========================
-  // History UI
-  // =========================
-  function renderHistory(items){
-    const row = $("histRow");
-    row.innerHTML = "";
-    const arr = Array.isArray(items) ? items : [];
-    for (const it of arr.slice(0, 12)) {
-      const pct = Number(it.pct || 0);
-      const wrap = document.createElement("div");
-      wrap.className = "histItem";
-
-      const tri = document.createElement("div");
-      tri.className = "tri " + (pct >= 0 ? "up" : "down");
-
-      const txt = document.createElement("div");
-      txt.className = "pctText mono";
-      txt.textContent = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
-
-      wrap.appendChild(tri);
-      wrap.appendChild(txt);
-      row.appendChild(wrap);
+    // =========================
+    // Wallet/balance/deposit (оставлено, но deposit_resume ОТКЛЮЧЕН)
+    // =========================
+    let __tonCore = null;
+    async function tonCore(){
+      if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
+      return __tonCore;
     }
-  }
-
-  // =========================
-  // Toast
-  // =========================
-  const toast = $("toast");
-  let toastTimer = null;
-  function showToast(kind, text){
-    toast.className = "toast show " + (kind || "");
-    toast.textContent = text;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toast.className = "toast";
-      toast.textContent = "";
-    }, 1500);
-  }
-
-  // =========================
-  // Wallet/balance/deposit (как было)
-  // =========================
-  let __tonCore = null;
-  async function tonCore(){
-    if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
-    return __tonCore;
-  }
-  function bytesToBase64(bytes){
-    let bin = "";
-    for (const b of bytes) bin += String.fromCharCode(b);
-    return btoa(bin);
-  }
-  async function commentToBocBase64(comment){
-    const { beginCell } = await tonCore();
-    const cell = beginCell().storeUint(0, 32).storeStringTail(String(comment || "")).endCell();
-    const boc = cell.toBoc({ idx: false });
-    return bytesToBase64(boc);
-  }
-  function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
-
-  function getWalletRawLS(){
-    const ls = (localStorage.getItem("walletRaw") || "").trim();
-    return ls || null;
-  }
-  async function setWalletFromTonConnect(wallet){
-    const addr = (wallet?.account?.address || "").trim();
-    if (!addr){
-      localStorage.removeItem("walletRaw");
-      localStorage.removeItem("walletFriendly");
-      return;
+    function bytesToBase64(bytes){
+      let bin = "";
+      for (const b of bytes) bin += String.fromCharCode(b);
+      return btoa(bin);
     }
-    const { Address } = await tonCore();
-    const raw = Address.parse(addr).toRawString();
-    localStorage.setItem("walletRaw", raw);
-    const fr = Address.parse(raw).toString({ urlSafe: true, bounceable: false, testOnly: false });
-    localStorage.setItem("walletFriendly", fr);
-  }
-  async function getWalletFriendlyLS(){
-    const cached = (localStorage.getItem("walletFriendly") || "").trim();
-    if (cached) return cached;
-    const raw = getWalletRawLS();
-    if (!raw) return null;
-    const { Address } = await tonCore();
-    const fr = Address.parse(raw).toString({ urlSafe: true, bounceable: false, testOnly: false });
-    localStorage.setItem("walletFriendly", fr);
-    return fr;
-  }
-
-  (function initTonConnect(){
-    try{
-      const TonConnectUI = window.TON_CONNECT_UI?.TonConnectUI;
-      if (!TonConnectUI) { window.__tonUI = null; window.__wallet = null; return; }
-
-      const tonUI = new TonConnectUI({
-        manifestUrl: location.origin + "/tonconnect-manifest.json",
-      });
-
-      window.__tonUI = tonUI;
-      window.__wallet = null;
-
-      tonUI.onStatusChange(async (wallet) => {
-        window.__wallet = wallet || null;
-        try{ await setWalletFromTonConnect(wallet); }catch{
-          localStorage.removeItem("walletRaw");
-          localStorage.removeItem("walletFriendly");
-        }
-        window.dispatchEvent(new Event("wallet_changed"));
-      });
-
-      tonUI.connectionRestored
-        .then(() => window.dispatchEvent(new Event("wallet_changed")))
-        .catch(() => {});
-    }catch{
-      window.__tonUI = null;
-      window.__wallet = null;
+    async function commentToBocBase64(comment){
+      const { beginCell } = await tonCore();
+      const cell = beginCell().storeUint(0, 32).storeStringTail(String(comment || "")).endCell();
+      const boc = cell.toBoc({ idx: false });
+      return bytesToBase64(boc);
     }
-  })();
+    function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
 
-  async function bindWalletOnServer(){
-    const raw = getWalletRawLS();
-    const initData = tg?.initData || "";
-    if (!raw || !initData) return;
-    try{
-      await fetch(apiUrl(`/api/bind_wallet?t=${Date.now()}`), {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ initData, walletAddress: raw })
-      });
-    }catch(e){
-      console.warn("bind_wallet failed:", e);
+    function getWalletRawLS(){
+      const ls = (localStorage.getItem("walletRaw") || "").trim();
+      return ls || null;
     }
-  }
-
-  function setBalanceTonUI(v){
-    const ton = Number(v) || 0;
-    $("balTon").textContent = ton.toFixed(2);
-  }
-
-  async function refreshBalance(){
-    const raw = getWalletRawLS();
-    if (!raw){ setBalanceTonUI(0); return 0; }
-    const r = await fetch(apiUrl(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
-    const j = await r.json().catch(()=>({}));
-    const ton = Number(j.balanceTon ?? j.ton ?? (j.nano ? (Number(j.nano)/1e9) : 0) ?? 0);
-    if (Number.isFinite(ton)) setBalanceTonUI(ton);
-    return ton;
-  }
-
-  // ✅ ВРЕМЕННО ОТКЛЮЧЕНО (именно это у тебя красное в Network)
-  // Когда починишь серверный /api/deposit_resume — убери "return;" ниже.
-  async function resumeDepositsSilently(){
-    return;
-    // const raw = getWalletRawLS();
-    // if (!raw) return;
-    // try{
-    //   await fetch(apiUrl(`/api/deposit_resume?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
-    // }catch(e){
-    //   console.warn("deposit_resume failed:", e);
-    // }
-  }
-
-  async function confirmDepositTry(intentId, addressRaw){
-    const url = apiUrl(`/api/confirm_deposit?intentId=${encodeURIComponent(intentId)}&address=${encodeURIComponent(addressRaw)}&t=${Date.now()}`);
-    const r = await fetch(url, { cache:"no-store" });
-    const j = await r.json().catch(()=>({}));
-    return { ok: r.ok, json: j };
-  }
-
-  async function waitAndCreditSilent(intentId){
-    const raw = getWalletRawLS();
-    if (!raw) return;
-
-    for (let i=0;i<80;i++){
-      const { ok, json } = await confirmDepositTry(intentId, raw);
-      if (ok && json?.status === "credited"){
-        await refreshBalance();
-        showPopup("TON", `Баланс пополнен: +${json.creditedTon} TON`);
+    async function setWalletFromTonConnect(wallet){
+      const addr = (wallet?.account?.address || "").trim();
+      if (!addr){
+        localStorage.removeItem("walletRaw");
+        localStorage.removeItem("walletFriendly");
         return;
       }
-      await sleep(1500);
+      const { Address } = await tonCore();
+      const raw = Address.parse(addr).toRawString();
+      localStorage.setItem("walletRaw", raw);
+      const fr = Address.parse(raw).toString({ urlSafe: true, bounceable: false, testOnly: false });
+      localStorage.setItem("walletFriendly", fr);
     }
-  }
-
-  // TON modals
-  const tonModal = $("tonModal");
-  const depositModal = $("depositModal");
-  function openTonModal(){ tonModal.classList.add("open"); }
-  function closeTonModal(){ tonModal.classList.remove("open"); }
-  function openDepositModal(){ depositModal.classList.add("open"); }
-  function closeDepositModal(){ depositModal.classList.remove("open"); }
-
-  $("btnBalance").onclick = () => openTonModal();
-  $("tonClose").onclick = () => closeTonModal();
-  tonModal.addEventListener("click", (e) => { if(e.target === tonModal) closeTonModal(); });
-
-  $("depositClose").onclick = () => closeDepositModal();
-  $("depositBack").onclick = () => closeDepositModal();
-  depositModal.addEventListener("click", (e) => { if(e.target === depositModal) closeDepositModal(); });
-
-  async function syncWalletUI(){
-    const raw = getWalletRawLS();
-    const walletStatus = $("walletStatus");
-    if (!raw){
-      walletStatus.textContent = "Not connected";
-      return;
-    }
-    const fr = await getWalletFriendlyLS();
-    walletStatus.textContent = shortAddr(fr || raw);
-  }
-
-  window.addEventListener("wallet_changed", async () => {
-    await syncWalletUI();
-    await bindWalletOnServer();
-    await resumeDepositsSilently();
-    await refreshBalance();
-  });
-
-  $("actionBind").onclick = async () => {
-    if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
-    showPopup("TON", "TonConnect не загрузился или manifest не доступен.");
-  };
-
-  $("actionDisconnect").onclick = async () => {
-    try{ await window.__tonUI?.disconnect?.(); }catch{}
-    localStorage.removeItem("walletRaw");
-    localStorage.removeItem("walletFriendly");
-    window.__wallet = null;
-    await syncWalletUI();
-    setBalanceTonUI(0);
-    showPopup("TON", "Кошелёк отвязан.");
-  };
-
-  $("actionDeposit").onclick = async () => {
-    if (!getWalletRawLS()){ showPopup("TON", "Сначала привяжи кошелёк."); return; }
-    $("depositHint").textContent = "";
-    openDepositModal();
-  };
-
-  $("actionWithdraw").onclick = () => showPopup("TON", "Вывод добавим позже.");
-
-  $("btnTopup").onclick = async () => {
-    if (!getWalletRawLS()){ openTonModal(); showPopup("TON", "Сначала привяжи кошелёк."); return; }
-    $("depositHint").textContent = "";
-    openDepositModal();
-  };
-
-  $("depositConfirm").onclick = async () => {
-    const raw = getWalletRawLS();
-    if (!raw){ showPopup("TON", "Сначала привяжи кошелёк."); return; }
-
-    const amountTon = Number($("depositAmount").value);
-    if (!amountTon || amountTon <= 0){ showPopup("Ошибка", "Введите сумму TON"); return; }
-    if (amountTon < 0.1){ showPopup("Ошибка", "Минимум 0.1 TON"); return; }
-    if (!window.__tonUI?.sendTransaction){ showPopup("TON", "TonConnect UI не готов."); return; }
-
-    try{
-      const intent = await apiPost("/api/deposit_intent?t=" + Date.now(), { amountTon, address: raw });
-
-      await window.__tonUI.sendTransaction({
-        validUntil: Math.floor(Date.now()/1000) + 300,
-        messages:[{
-          address: intent.toAddressFriendly || intent.toAddressRaw || intent.toAddress,
-          amount: String(intent.amountNano),
-          payload: await commentToBocBase64(intent.comment || "")
-        }]
-      });
-
-      closeDepositModal();
-      showPopup("TON", "Транзакция отправлена, ждём подтверждения.\n\nНе обновляйте страницу и не закрывайте окно.");
-      setTimeout(() => waitAndCreditSilent(intent.intentId), 8000);
-    }catch(e){
-      showPopup("TON", "Транзакция отменена или ошибка кошелька.");
-    }
-  };
-
-  // =========================
-  // Bet UI + settle
-  // =========================
-  let currentRound = null;
-  let betMs = 7000;
-  let roundMs = 19000;
-  let timeOffsetMs = 0;
-
-  function serverNow(){ return Date.now() + timeOffsetMs; }
-
-  let pos = null;
-  function setHint(text){ $("hint").textContent = text || ""; }
-  function setPosStatus(){
-    if(!pos){ $("posStatus").textContent = "—"; return; }
-    $("posStatus").textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON`;
-  }
-
-  let bettingOpen = false;
-  function setButtonsEnabled(on){
-    const b1 = $("btnLong");
-    const b2 = $("btnShort");
-    if (on){
-      b1.classList.remove("disabled");
-      b2.classList.remove("disabled");
-      bettingOpen = true;
-    } else {
-      b1.classList.add("disabled");
-      b2.classList.add("disabled");
-      bettingOpen = false;
-    }
-  }
-
-  async function place(side){
-    if(!bettingOpen) return;
-
-    const raw = getWalletRawLS();
-    if(!raw){
-      openTonModal();
-      showPopup("TON", "Сначала привяжи кошелёк.");
-      return;
+    async function getWalletFriendlyLS(){
+      const cached = (localStorage.getItem("walletFriendly") || "").trim();
+      if (cached) return cached;
+      const raw = getWalletRawLS();
+      if (!raw) return null;
+      const { Address } = await tonCore();
+      const fr = Address.parse(raw).toString({ urlSafe: true, bounceable: false, testOnly: false });
+      localStorage.setItem("walletFriendly", fr);
+      return fr;
     }
 
-    try{
-      await apiPost("/api/bet_place?t=" + Date.now(), {
-        side,
-        amountTon: selectedAmt,
-        roundId: currentRound?.roundId,
-        address: raw
-      });
+    (function initTonConnect(){
+      try{
+        const TonConnectUI = window.TON_CONNECT_UI?.TonConnectUI;
+        if (!TonConnectUI) { window.__tonUI = null; window.__wallet = null; return; }
 
-      pos = { side, amount: selectedAmt, roundId: currentRound.roundId };
-      setPosStatus();
-      setHint("Ставка принята");
-      await refreshBalance();
-    }catch(e){
-      setHint("Ошибка ставки");
-    }
-  }
+        const tonUI = new TonConnectUI({
+          manifestUrl: location.origin + "/tonconnect-manifest.json",
+        });
 
-  $("btnLong").onclick = () => place("long");
-  $("btnShort").onclick = () => place("short");
+        window.__tonUI = tonUI;
+        window.__wallet = null;
 
-  let lastSettledRound = null;
-  async function trySettleIfNeeded(){
-    if(!pos || !currentRound) return;
+        tonUI.onStatusChange(async (wallet) => {
+          window.__wallet = wallet || null;
+          try{ await setWalletFromTonConnect(wallet); }catch{
+            localStorage.removeItem("walletRaw");
+            localStorage.removeItem("walletFriendly");
+          }
+          window.dispatchEvent(new Event("wallet_changed"));
+        });
 
-    const nowS = serverNow();
-    const finishAt = currentRound.nextAt;
-    if (nowS < finishAt) return;
+        tonUI.connectionRestored
+          .then(() => window.dispatchEvent(new Event("wallet_changed")))
+          .catch(() => {});
+      }catch{
+        window.__tonUI = null;
+        window.__wallet = null;
+      }
+    })();
 
-    if (lastSettledRound === pos.roundId) return;
-
-    const raw = getWalletRawLS();
-    if(!raw) return;
-
-    try{
-      const r = await apiPost("/api/bet_settle?t=" + Date.now(), {
-        address: raw,
-        roundId: pos.roundId
-      });
-
-      if (r?.status === "pending") return;
-
-      lastSettledRound = pos.roundId;
-      await refreshBalance();
-
-      const pct = Number(r.pct);
-      const sPct = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
-      const profit = Number(r.profitTon || 0);
-
-      if (profit >= 0) showToast("win", `WIN ${sPct}`);
-      else showToast("lose", `LOSE ${sPct}`);
-
-      pos = null;
-      setPosStatus();
-      setHint("");
-    }catch(e){}
-  }
-
-  function updateBetCountdown(){
-    if(!currentRound) return;
-
-    const nowS = serverNow();
-    const startAt = currentRound.startAt;
-    const endAt = currentRound.endAt;
-
-    if (nowS >= startAt && nowS < endAt){
-      const leftMs = endAt - nowS;
-      const secLeft = Math.max(0, Math.ceil(leftMs/1000));
-
-      cdEl.classList.add("show");
-      cdNumEl.textContent = String(secLeft);
-
-      const progress = leftMs / betMs;
-      setRing(progress);
-      setRingColor(secLeft);
-
-      setButtonsEnabled(true);
-    } else {
-      cdEl.classList.remove("show");
-      setButtonsEnabled(false);
-    }
-  }
-
-  async function loadState(){
-    const data = await apiGet("/api/state?t=" + Date.now());
-    timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
-    currentRound = data.round;
-    betMs = data.betMs || 7000;
-    roundMs = data.roundMs || 19000;
-    renderHistory(data.history || []);
-  }
-
-  async function loadSeries(){
-    const data = await apiGet("/api/series?t=" + Date.now());
-    const points = toChartData(data.series);
-
-    if(!points.length) return;
-
-    // 1) Первый раз — setData
-    if(!didSetInitialData){
-      series.setData(points);
-      chart.timeScale().fitContent();
-      didSetInitialData = true;
-      return;
+    async function bindWalletOnServer(){
+      const raw = getWalletRawLS();
+      const initData = tg?.initData || "";
+      if (!raw || !initData) return;
+      try{
+        await fetch(apiUrl(`/api/bind_wallet?t=${Date.now()}`), {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ initData, walletAddress: raw })
+        });
+      }catch(e){
+        console.warn("bind_wallet failed:", e);
+      }
     }
 
-    // 2) Потом — update последней точкой (без постоянного setData)
-    const last = points[points.length - 1];
-    series.update(last);
-  }
+    function setBalanceTonUI(v){
+      const ton = Number(v) || 0;
+      if ($("balTon")) $("balTon").textContent = ton.toFixed(2);
+    }
 
-  // boot
-  initChart();
-  setPosStatus();
-  setHint("");
-  setButtonsEnabled(false);
+    async function refreshBalance(){
+      const raw = getWalletRawLS();
+      if (!raw){ setBalanceTonUI(0); return 0; }
+      const r = await fetch(apiUrl(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
+      const j = await r.json().catch(()=>({}));
+      const ton = Number(j.balanceTon ?? j.ton ?? (j.nano ? (Number(j.nano)/1e9) : 0) ?? 0);
+      if (Number.isFinite(ton)) setBalanceTonUI(ton);
+      return ton;
+    }
 
-  (async function boot(){
-    try{
-      await loadState();
-      await loadSeries();
+    // ✅ ОТКЛЮЧЕНО — у тебя это красное. Включишь после фикса сервера.
+    async function resumeDepositsSilently(){ return; }
+
+    async function confirmDepositTry(intentId, addressRaw){
+      const url = apiUrl(`/api/confirm_deposit?intentId=${encodeURIComponent(intentId)}&address=${encodeURIComponent(addressRaw)}&t=${Date.now()}`);
+      const r = await fetch(url, { cache:"no-store" });
+      const j = await r.json().catch(()=>({}));
+      return { ok: r.ok, json: j };
+    }
+
+    async function waitAndCreditSilent(intentId){
+      const raw = getWalletRawLS();
+      if (!raw) return;
+      for (let i=0;i<80;i++){
+        const { ok, json } = await confirmDepositTry(intentId, raw);
+        if (ok && json?.status === "credited"){
+          await refreshBalance();
+          alert(`Баланс пополнен: +${json.creditedTon} TON`);
+          return;
+        }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+
+    // TON modals
+    const tonModal = $("tonModal");
+    const depositModal = $("depositModal");
+    function openTonModal(){ tonModal?.classList.add("open"); }
+    function closeTonModal(){ tonModal?.classList.remove("open"); }
+    function openDepositModal(){ depositModal?.classList.add("open"); }
+    function closeDepositModal(){ depositModal?.classList.remove("open"); }
+
+    if ($("btnBalance")) $("btnBalance").onclick = () => openTonModal();
+    if ($("tonClose")) $("tonClose").onclick = () => closeTonModal();
+    tonModal?.addEventListener("click", (e) => { if(e.target === tonModal) closeTonModal(); });
+
+    if ($("depositClose")) $("depositClose").onclick = () => closeDepositModal();
+    if ($("depositBack")) $("depositBack").onclick = () => closeDepositModal();
+    depositModal?.addEventListener("click", (e) => { if(e.target === depositModal) closeDepositModal(); });
+
+    async function syncWalletUI(){
+      const raw = getWalletRawLS();
+      const walletStatus = $("walletStatus");
+      if (!walletStatus) return;
+      if (!raw){
+        walletStatus.textContent = "Not connected";
+        return;
+      }
+      const fr = await getWalletFriendlyLS();
+      walletStatus.textContent = shortAddr(fr || raw);
+    }
+
+    window.addEventListener("wallet_changed", async () => {
       await syncWalletUI();
+      await bindWalletOnServer();
       await resumeDepositsSilently();
       await refreshBalance();
-    }catch(e){
-      console.error("BOOT ERROR:", e);
-    }
-  })();
+    });
 
-  setInterval(() => loadState().catch(e => console.warn("state err", e)), 800);
-  setInterval(() => loadSeries().catch(e => console.warn("series err", e)), 900);
-  setInterval(() => updateBetCountdown(), 120);
-  setInterval(() => trySettleIfNeeded(), 600);
-  setInterval(() => refreshBalance().catch(()=>{}), 6500);
-});
+    if ($("actionBind")) $("actionBind").onclick = async () => {
+      if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
+      alert("TonConnect не загрузился или manifest не доступен.");
+    };
+
+    if ($("actionDisconnect")) $("actionDisconnect").onclick = async () => {
+      try{ await window.__tonUI?.disconnect?.(); }catch{}
+      localStorage.removeItem("walletRaw");
+      localStorage.removeItem("walletFriendly");
+      window.__wallet = null;
+      await syncWalletUI();
+      setBalanceTonUI(0);
+      alert("Кошелёк отвязан.");
+    };
+
+    if ($("actionDeposit")) $("actionDeposit").onclick = async () => {
+      if (!getWalletRawLS()){ alert("Сначала привяжи кошелёк."); return; }
+      if ($("depositHint")) $("depositHint").textContent = "";
+      openDepositModal();
+    };
+
+    if ($("actionWithdraw")) $("actionWithdraw").onclick = () => alert("Вывод добавим позже.");
+
+    if ($("btnTopup")) $("btnTopup").onclick = async () => {
+      if (!getWalletRawLS()){ openTonModal(); alert("Сначала привяжи кошелёк."); return; }
+      if ($("depositHint")) $("depositHint").textContent = "";
+      openDepositModal();
+    };
+
+    if ($("depositConfirm")) $("depositConfirm").onclick = async () => {
+      const raw = getWalletRawLS();
+      if (!raw){ alert("Сначала привяжи кошелёк."); return; }
+
+      const amountTon = Number($("depositAmount")?.value || 0);
+      if (!amountTon || amountTon <= 0){ alert("Введите сумму TON"); return; }
+      if (amountTon < 0.1){ alert("Минимум 0.1 TON"); return; }
+      if (!window.__tonUI?.sendTransaction){ alert("TonConnect UI не готов."); return; }
+
+      try{
+        const intent = await apiPost("/api/deposit_intent?t=" + Date.now(), { amountTon, address: raw });
+
+        await window.__tonUI.sendTransaction({
+          validUntil: Math.floor(Date.now()/1000) + 300,
+          messages:[{
+            address: intent.toAddressFriendly || intent.toAddressRaw || intent.toAddress,
+            amount: String(intent.amountNano),
+            payload: await commentToBocBase64(intent.comment || "")
+          }]
+        });
+
+        closeDepositModal();
+        alert("Транзакция отправлена, ждём подтверждения.\n\nНе обновляйте страницу и не закрывайте окно.");
+        setTimeout(() => waitAndCreditSilent(intent.intentId), 8000);
+      }catch(e){
+        alert("Транзакция отменена или ошибка кошелька.");
+      }
+    };
+
+    // =========================
+    // Bet UI + settle
+    // =========================
+    let currentRound = null;
+    let betMs = 7000;
+    let roundMs = 19000;
+    let timeOffsetMs = 0;
+
+    function serverNow(){ return Date.now() + timeOffsetMs; }
+
+    let pos = null;
+    function setHint(text){ if ($("hint")) $("hint").textContent = text || ""; }
+    function setPosStatus(){
+      if(!$("posStatus")) return;
+      if(!pos){ $("posStatus").textContent = "—"; return; }
+      $("posStatus").textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON`;
+    }
+
+    let bettingOpen = false;
+    function setButtonsEnabled(on){
+      const b1 = $("btnLong");
+      const b2 = $("btnShort");
+      if(!b1 || !b2) return;
+      if (on){
+        b1.classList.remove("disabled");
+        b2.classList.remove("disabled");
+        bettingOpen = true;
+      } else {
+        b1.classList.add("disabled");
+        b2.classList.add("disabled");
+        bettingOpen = false;
+      }
+    }
+
+    async function place(side){
+      if(!bettingOpen) return;
+
+      const raw = getWalletRawLS();
+      if(!raw){
+        openTonModal();
+        alert("Сначала привяжи кошелёк.");
+        return;
+      }
+
+      try{
+        await apiPost("/api/bet_place?t=" + Date.now(), {
+          side,
+          amountTon: selectedAmt,
+          roundId: currentRound?.roundId,
+          address: raw
+        });
+
+        pos = { side, amount: selectedAmt, roundId: currentRound.roundId };
+        setPosStatus();
+        setHint("Ставка принята");
+        await refreshBalance();
+      }catch(e){
+        setHint("Ошибка ставки");
+      }
+    }
+
+    if ($("btnLong")) $("btnLong").onclick = () => place("long");
+    if ($("btnShort")) $("btnShort").onclick = () => place("short");
+
+    let lastSettledRound = null;
+    async function trySettleIfNeeded(){
+      if(!pos || !currentRound) return;
+
+      const nowS = serverNow();
+      const finishAt = currentRound.nextAt;
+      if (nowS < finishAt) return;
+
+      if (lastSettledRound === pos.roundId) return;
+
+      const raw = getWalletRawLS();
+      if(!raw) return;
+
+      try{
+        const r = await apiPost("/api/bet_settle?t=" + Date.now(), {
+          address: raw,
+          roundId: pos.roundId
+        });
+
+        if (r?.status === "pending") return;
+
+        lastSettledRound = pos.roundId;
+        await refreshBalance();
+
+        const pct = Number(r.pct);
+        const sPct = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
+        const profit = Number(r.profitTon || 0);
+
+        if (profit >= 0) showToast("win", `WIN ${sPct}`);
+        else showToast("lose", `LOSE ${sPct}`);
+
+        pos = null;
+        setPosStatus();
+        setHint("");
+      }catch(e){}
+    }
+
+    function updateBetCountdown(){
+      if(!currentRound || !cdEl || !cdNumEl) return;
+
+      const nowS = serverNow();
+      const startAt = currentRound.startAt;
+      const endAt = currentRound.endAt;
+
+      if (nowS >= startAt && nowS < endAt){
+        const leftMs = endAt - nowS;
+        const secLeft = Math.max(0, Math.ceil(leftMs/1000));
+
+        cdEl.classList.add("show");
+        cdNumEl.textContent = String(secLeft);
+
+        const progress = leftMs / betMs;
+        setRing(progress);
+        setRingColor(secLeft);
+
+        setButtonsEnabled(true);
+      } else {
+        cdEl.classList.remove("show");
+        setButtonsEnabled(false);
+      }
+    }
+
+    async function loadState(){
+      const data = await apiGet("/api/state?t=" + Date.now());
+      timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
+      currentRound = data.round;
+      betMs = data.betMs || 7000;
+      roundMs = data.roundMs || 19000;
+      renderHistory(data.history || []);
+    }
+
+    async function loadSeries(){
+      if(!chart || !area) return;
+      const data = await apiGet("/api/series?t=" + Date.now());
+      const points = toChartData(data.series);
+
+      // если API пустой — оставляем fallback, чтобы не было пусто
+      if(!points.length) return;
+
+      // первый раз можно setData
+      area.setData(points);
+      chart.timeScale().fitContent();
+      didSetAnyData = true;
+      clearChartError();
+    }
+
+    // ===== BOOT (самое важное) =====
+    // 1) Попробовать создать график (с fallback), даже если API сломан.
+    // 2) Если не создался — покажем ошибку поверх.
+    // 3) Затем грузим state/series (если есть).
+    const ok = initChartOrError();
+
+    setPosStatus();
+    setHint("");
+    setButtonsEnabled(false);
+
+    (async function boot(){
+      try{
+        if(ok){
+          // state/series могут падать — график всё равно не пустой (fallback)
+          await loadState().catch(e => console.warn("state err", e));
+          await loadSeries().catch(e => console.warn("series err", e));
+        }
+        await syncWalletUI().catch(()=>{});
+        await refreshBalance().catch(()=>{});
+      }catch(e){
+        console.error("BOOT ERROR:", e);
+      }
+    })();
+
+    // Периодические обновления
+    setInterval(() => { if(ok) loadState().catch(e => console.warn("state err", e)); }, 800);
+    setInterval(() => { if(ok) loadSeries().catch(e => console.warn("series err", e)); }, 1200);
+    setInterval(() => updateBetCountdown(), 120);
+    setInterval(() => trySettleIfNeeded(), 600);
+    setInterval(() => refreshBalance().catch(()=>{}), 6500);
+
+    // Если график не создался из-за CDN — попробуем ещё раз через 2 секунды (fallback CDN мог догрузиться)
+    if(!ok){
+      setTimeout(() => {
+        const ok2 = initChartOrError();
+        if(ok2){
+          loadState().catch(()=>{});
+          loadSeries().catch(()=>{});
+        }
+      }, 2200);
+    }
+  });
+})();
 </script>
 </body>
 </html>
