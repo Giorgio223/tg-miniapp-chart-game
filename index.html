@@ -3,19 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-  <title>Mini App — Chart Game</title>
+  <title>Chart Game</title>
 
-  <!-- Telegram WebApp (опционально, если открываешь внутри TG) -->
+  <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Lightweight Charts (график как на скрине) -->
+  <!-- Chart -->
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 
   <style>
     :root{
       --bg:#0b0614;
       --panel:#120824;
-      --panel2:#0f0720;
       --stroke:rgba(255,255,255,.10);
       --text:#f2efff;
       --muted:rgba(242,239,255,.65);
@@ -31,7 +30,7 @@
     html,body{height:100%}
     body{
       margin:0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
       background:
         radial-gradient(1200px 600px at 60% 10%, rgba(124,77,255,.28), transparent 55%),
         radial-gradient(900px 520px at 20% 30%, rgba(49,209,124,.12), transparent 55%),
@@ -63,9 +62,14 @@
       z-index: 50;
       backdrop-filter: blur(10px);
     }
+
     .brand{
-      display:flex; align-items:center; gap:10px; min-width: 0;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width: 0;
     }
+
     .logo{
       width:34px;height:34px;border-radius:12px;
       background: radial-gradient(circle at 30% 30%, rgba(124,77,255,.9), rgba(124,77,255,.25)),
@@ -73,46 +77,11 @@
       border:1px solid rgba(255,255,255,.18);
       box-shadow: 0 10px 25px rgba(124,77,255,.25);
     }
-    .brand h1{
-      margin:0;
-      font-size:14px;
-      line-height:1.1;
-      letter-spacing:.2px;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-    .brand .sub{
-      font-size:11px;
-      color:var(--muted);
-      margin-top:2px;
-    }
 
     .rightbar{
       display:flex; align-items:center; gap:10px;
-    }
-
-    .pill{
-      display:flex;
-      align-items:center;
-      gap:8px;
-      padding: 8px 10px;
-      border-radius: 999px;
-      border:1px solid var(--stroke);
-      background: rgba(0,0,0,.18);
-      font-size:12px;
-      color: var(--muted);
-      white-space: nowrap;
-    }
-    .pill strong{color:var(--text); font-weight:700}
-    .tonDot{
-      width:18px;height:18px;border-radius:999px;
-      display:inline-grid; place-items:center;
-      background: rgba(0, 166, 255, .15);
-      border:1px solid rgba(0,166,255,.35);
-      color:#8ad7ff;
-      font-weight:800;
-      font-size:11px;
+      flex-wrap: wrap;
+      justify-content:flex-end;
     }
 
     .btn{
@@ -121,13 +90,17 @@
       cursor:pointer;
       border-radius: 12px;
       padding: 10px 12px;
-      font-weight: 800;
+      font-weight: 900;
       font-size: 12px;
       letter-spacing:.2px;
       color: var(--text);
       background: rgba(255,255,255,.06);
       border:1px solid rgba(255,255,255,.12);
       transition: transform .06s ease, filter .2s ease, background .2s ease;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      white-space: nowrap;
     }
     .btn:active{transform: translateY(1px) scale(.99)}
     .btn.primary{
@@ -144,32 +117,26 @@
       background: rgba(0,0,0,.18);
     }
 
-    /* Tabs */
-    .tabs{
-      margin-top: 12px;
+    .tonIcon{
+      width:18px;height:18px;
+      object-fit: contain;
+      display:block;
+      filter: drop-shadow(0 6px 14px rgba(0,0,0,.35));
+    }
+
+    .pill{
       display:flex;
-      gap:10px;
-    }
-    .tab{
-      flex:1;
-      padding: 10px 12px;
-      border-radius: 14px;
+      align-items:center;
+      gap:8px;
+      padding: 8px 10px;
+      border-radius: 999px;
       border:1px solid var(--stroke);
-      background: rgba(255,255,255,.04);
+      background: rgba(0,0,0,.18);
+      font-size:12px;
       color: var(--muted);
-      font-weight: 900;
-      letter-spacing:.3px;
-      text-transform: uppercase;
-      font-size: 12px;
-      cursor:pointer;
-      text-align:center;
+      white-space: nowrap;
     }
-    .tab.active{
-      color: var(--text);
-      background: linear-gradient(180deg, rgba(124,77,255,.28), rgba(0,0,0,.12));
-      border-color: rgba(124,77,255,.45);
-      box-shadow: 0 14px 38px rgba(124,77,255,.12);
-    }
+    .pill strong{color:var(--text); font-weight:1000}
 
     /* Main layout */
     .grid{
@@ -210,11 +177,11 @@
     .pair .t{
       font-size:12px;
       color: var(--muted);
-      font-weight:700;
+      font-weight:800;
     }
     .pair .v{
       font-size:14px;
-      font-weight:1000;
+      font-weight:1100;
       letter-spacing:.2px;
       white-space:nowrap;
       overflow:hidden;
@@ -240,22 +207,14 @@
     }
 
     /* Right panel (bet) */
-    .betWrap{
-      padding: 12px;
-    }
+    .betWrap{ padding: 12px; }
     .sectionTitle{
       font-size: 12px;
-      font-weight: 1000;
+      font-weight: 1100;
       letter-spacing:.35px;
       text-transform: uppercase;
       color: var(--muted);
       margin: 2px 0 10px;
-    }
-
-    .row{
-      display:flex;
-      gap:10px;
-      align-items:center;
     }
 
     .amountGrid{
@@ -270,7 +229,7 @@
       border:1px solid rgba(255,255,255,.10);
       background: rgba(0,0,0,.18);
       color: var(--text);
-      font-weight: 900;
+      font-weight: 1000;
       font-size: 12px;
       cursor:pointer;
       text-align:center;
@@ -289,8 +248,11 @@
       background: rgba(0,0,0,.22);
       margin-bottom: 10px;
     }
-    .bigBox .label{font-size:11px;color:var(--muted);font-weight:800; text-transform:uppercase; letter-spacing:.25px}
-    .bigBox .value{font-size:18px;font-weight:1100;margin-top:6px}
+    .bigBox .label{
+      font-size:11px;color:var(--muted);font-weight:900;
+      text-transform:uppercase; letter-spacing:.25px
+    }
+    .bigBox .value{font-size:18px;font-weight:1150;margin-top:6px}
 
     .actions{
       display:grid;
@@ -316,7 +278,6 @@
       line-height: 1.35;
     }
 
-    /* Footer strip like the game UI */
     .strip{
       margin-top: 12px;
       padding: 10px 12px;
@@ -329,202 +290,225 @@
       gap:10px;
       flex-wrap: wrap;
     }
-    .strip .badge{
-      display:flex; align-items:center; gap:8px;
-      padding: 8px 10px;
-      border-radius: 999px;
-      border:1px solid rgba(124,77,255,.35);
-      background: rgba(124,77,255,.10);
-      font-size: 12px;
-      font-weight: 900;
-      letter-spacing:.2px;
-    }
-    .strip .badge .p{
-      width:18px;height:18px;border-radius:6px;
-      display:inline-grid; place-items:center;
-      background: rgba(124,77,255,.35);
-      border:1px solid rgba(124,77,255,.55);
-      font-size: 11px;
-    }
 
-    /* Bonus page */
-    .bonus{
-      padding: 16px;
-    }
-    .bonusBox{
-      padding: 14px;
-      border-radius: 16px;
-      border:1px dashed rgba(255,255,255,.18);
-      background: rgba(0,0,0,.20);
-      color: var(--muted);
-      line-height: 1.4;
-    }
-
-    /* small */
     .mono{font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;}
+
+    /* Bonus overlay */
+    .bonusOverlay{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.62);
+      display:none;
+      align-items:flex-end;
+      justify-content:center;
+      padding: 14px;
+      z-index: 200;
+      backdrop-filter: blur(8px);
+    }
+    .bonusSheet{
+      width: min(560px, 100%);
+      border-radius: 18px;
+      border:1px solid rgba(255,255,255,.12);
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.22));
+      box-shadow: 0 26px 90px rgba(0,0,0,.65);
+      overflow:hidden;
+    }
+    .bonusHead{
+      padding: 12px 12px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.18);
+    }
+    .bonusHead .t{
+      font-weight:1100;
+      letter-spacing:.3px;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .bonusBody{
+      padding: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 13px;
+    }
   </style>
 </head>
 
 <body>
   <div class="wrap">
 
+    <!-- TOPBAR -->
     <div class="topbar">
       <div class="brand">
         <div class="logo"></div>
-        <div class="brandText">
-          <h1>PRO • CHART GAME</h1>
-          <div class="sub" id="subline">Live rounds • Mini App</div>
-        </div>
       </div>
 
       <div class="rightbar">
-        <div class="pill" title="Баланс">
-          <span class="tonDot">T</span>
-          <span>Balance:</span>
-          <strong class="mono" id="balTon">0.00</strong>
-          <span>TON</span>
-        </div>
+        <button class="btn ghost" id="btnBonus">BONUS</button>
         <button class="btn orange" id="btnTopup">Пополнить</button>
-        <button class="btn primary" id="btnWallet">Кошелёк</button>
+
+        <!-- Баланс как кнопка + иконка ton.png -->
+        <button class="btn primary" id="btnBalance">
+          <img class="tonIcon" src="/ton.png" alt="TON" />
+          <span>Баланс:</span>
+          <span class="mono" id="balTon">0.00</span>
+        </button>
       </div>
     </div>
 
-    <div class="tabs">
-      <button class="tab active" id="tabTrade">Trade</button>
-      <button class="tab" id="tabBonus">Bonus</button>
-    </div>
+    <!-- MAIN -->
+    <div class="grid">
 
-    <!-- TRADE VIEW -->
-    <div id="viewTrade">
-      <div class="grid">
-
-        <!-- Chart card -->
-        <div class="card">
-          <div class="chartHead">
-            <div class="pair">
-              <div class="t">Instrument</div>
-              <div class="v" id="pairName">Slot Catalog • Synthetic</div>
-            </div>
-
-            <div class="stats">
-              <div class="stat">Round: <b class="mono" id="roundId">—</b></div>
-              <div class="stat">Time: <b class="mono" id="roundTimer">—</b></div>
-              <div class="stat">Price: <b class="mono" id="lastPrice">—</b></div>
-            </div>
-          </div>
-
-          <div id="chart"></div>
-        </div>
-
-        <!-- Bet panel -->
-        <div class="card">
-          <div class="betWrap">
-            <div class="sectionTitle">Betting</div>
-
-            <div class="amountGrid" id="chips">
-              <div class="chip active" data-amt="0.1">0.10</div>
-              <div class="chip" data-amt="0.2">0.20</div>
-              <div class="chip" data-amt="0.5">0.50</div>
-              <div class="chip" data-amt="1">1.00</div>
-              <div class="chip" data-amt="2">2.00</div>
-              <div class="chip" data-amt="5">5.00</div>
-              <div class="chip" data-amt="10">10</div>
-              <div class="chip" data-amt="20">20</div>
-            </div>
-
-            <div class="bigBox">
-              <div class="label">Bet amount</div>
-              <div class="value"><span class="mono" id="betAmt">0.10</span> TON</div>
-            </div>
-
-            <div class="bigBox">
-              <div class="label">Your position</div>
-              <div class="value mono" id="posStatus">No position</div>
-            </div>
-
-            <div class="actions">
-              <button class="btn btnLong" id="btnLong">LONG ▲</button>
-              <button class="btn btnShort" id="btnShort">SHORT ▼</button>
-            </div>
-
-            <div class="hint" id="hint">
-              Нажми <b>LONG</b> или <b>SHORT</b> в течение раунда. Логику расчёта и бонусы подключим дальше.
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <div class="strip">
-        <div class="badge">
-          <span class="p">P</span>
-          <span>PRO • UI</span>
-        </div>
-        <div class="pill">
-          <span>Status:</span>
-          <strong id="netStatus">connecting…</strong>
-        </div>
-      </div>
-    </div>
-
-    <!-- BONUS VIEW -->
-    <div id="viewBonus" style="display:none;">
+      <!-- Chart card -->
       <div class="card">
-        <div class="bonus">
-          <div class="sectionTitle">Bonus</div>
-          <div class="bonusBox">
-            Тут будет бонусная система (ежедневные бонусы, промокоды, задания и т.д.).<br/>
-            Пока просто вкладка — функцию зададим позже.
+        <div class="chartHead">
+          <div class="pair">
+            <div class="t">Instrument</div>
+            <div class="v" id="pairName">Slot Catalog • Synthetic</div>
+          </div>
+
+          <div class="stats">
+            <div class="stat">Round: <b class="mono" id="roundId">—</b></div>
+            <div class="stat">Time: <b class="mono" id="roundTimer">—</b></div>
+            <div class="stat">Price: <b class="mono" id="lastPrice">—</b></div>
           </div>
         </div>
+
+        <div id="chart"></div>
+      </div>
+
+      <!-- Bet panel -->
+      <div class="card">
+        <div class="betWrap">
+          <div class="sectionTitle">Betting</div>
+
+          <div class="amountGrid" id="chips">
+            <div class="chip active" data-amt="0.1">0.10</div>
+            <div class="chip" data-amt="0.2">0.20</div>
+            <div class="chip" data-amt="0.5">0.50</div>
+            <div class="chip" data-amt="1">1.00</div>
+            <div class="chip" data-amt="2">2.00</div>
+            <div class="chip" data-amt="5">5.00</div>
+            <div class="chip" data-amt="10">10</div>
+            <div class="chip" data-amt="20">20</div>
+          </div>
+
+          <div class="bigBox">
+            <div class="label">Bet amount</div>
+            <div class="value"><span class="mono" id="betAmt">0.10</span> TON</div>
+          </div>
+
+          <div class="bigBox">
+            <div class="label">Your position</div>
+            <div class="value mono" id="posStatus">No position</div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btnLong" id="btnLong">LONG ▲</button>
+            <button class="btn btnShort" id="btnShort">SHORT ▼</button>
+          </div>
+
+          <div class="hint" id="hint">
+            Нажми <b>LONG</b> или <b>SHORT</b> в течение раунда.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="strip">
+      <div class="pill">
+        <span>Status:</span>
+        <strong id="netStatus">connecting…</strong>
       </div>
     </div>
 
   </div>
 
+  <!-- BONUS SHEET -->
+  <div class="bonusOverlay" id="bonusOverlay">
+    <div class="bonusSheet">
+      <div class="bonusHead">
+        <div class="t">BONUS</div>
+        <button class="btn ghost" id="btnBonusClose">Закрыть</button>
+      </div>
+      <div class="bonusBody">
+        Тут будет бонусная система (ежедневные бонусы, задания, промокоды и т.д.).<br/>
+        Пока это окно-заглушка — функцию зададим позже.
+      </div>
+    </div>
+  </div>
+
   <script>
     // ---------------------------
-    // Config
+    // Telegram WebApp init
     // ---------------------------
-    const API = ""; // если нужно проксировать на другой домен — поставь "https://xxx.vercel.app"
+    const tg = window.Telegram?.WebApp;
+    try { tg?.ready(); tg?.expand(); } catch(e){}
+
+    // ---------------------------
+    // Helpers
+    // ---------------------------
+    const API = ""; // если нужно на другой домен — поставь "https://xxx.vercel.app"
     const $ = (id) => document.getElementById(id);
 
-    // Telegram WebApp init (не обязателен)
-    const tg = window.Telegram?.WebApp;
-    try {
-      tg?.ready();
-      tg?.expand();
-    } catch(e){}
-
-    // ---------------------------
-    // Tabs
-    // ---------------------------
-    const tabTrade = $("tabTrade");
-    const tabBonus = $("tabBonus");
-    const viewTrade = $("viewTrade");
-    const viewBonus = $("viewBonus");
-
-    function setTab(name){
-      const isTrade = name === "trade";
-      tabTrade.classList.toggle("active", isTrade);
-      tabBonus.classList.toggle("active", !isTrade);
-      viewTrade.style.display = isTrade ? "" : "none";
-      viewBonus.style.display = isTrade ? "none" : "";
+    async function apiGet(path){
+      const r = await fetch(API + path, { cache: "no-store" });
+      if(!r.ok) throw new Error(path + " " + r.status);
+      return await r.json();
     }
-    tabTrade.onclick = () => setTab("trade");
-    tabBonus.onclick = () => setTab("bonus");
+
+    async function apiPost(path, body){
+      const r = await fetch(API + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {})
+      });
+      if(!r.ok) throw new Error(path + " " + r.status);
+      return await r.json();
+    }
+
+    function openExternal(url){
+      if(!url) return false;
+      try{
+        if (tg?.openTelegramLink && (url.startsWith("tg://") || url.includes("t.me/"))) {
+          tg.openTelegramLink(url);
+          return true;
+        }
+        if (tg?.openLink) {
+          tg.openLink(url, { try_instant_view: false });
+          return true;
+        }
+      }catch(e){}
+      window.location.href = url;
+      return true;
+    }
+
+    // ---------------------------
+    // BONUS modal
+    // ---------------------------
+    const bonusOverlay = $("bonusOverlay");
+    $("btnBonus").onclick = () => bonusOverlay.style.display = "flex";
+    $("btnBonusClose").onclick = () => bonusOverlay.style.display = "none";
+    bonusOverlay.addEventListener("click", (e) => {
+      if(e.target === bonusOverlay) bonusOverlay.style.display = "none";
+    });
 
     // ---------------------------
     // Chips
     // ---------------------------
     let selectedAmt = 0.10;
+
     $("chips").addEventListener("click", (e) => {
       const chip = e.target.closest(".chip");
       if(!chip) return;
       document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
       chip.classList.add("active");
       selectedAmt = Number(chip.dataset.amt || "0.1");
-      $("betAmt").textContent = selectedAmt.toFixed(2).replace(/\.00$/,".00");
+      $("betAmt").textContent = selectedAmt.toFixed(2);
     });
 
     // ---------------------------
@@ -578,26 +562,7 @@
     }
 
     // ---------------------------
-    // API helpers
-    // ---------------------------
-    async function apiGet(path){
-      const r = await fetch(API + path, { cache: "no-store" });
-      if(!r.ok) throw new Error(path + " " + r.status);
-      return await r.json();
-    }
-
-    async function apiPost(path, body){
-      const r = await fetch(API + path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {})
-      });
-      if(!r.ok) throw new Error(path + " " + r.status);
-      return await r.json();
-    }
-
-    // ---------------------------
-    // State / Series polling
+    // State / Series / Balance
     // ---------------------------
     let currentRound = null;
     let pos = null; // {side, amount, roundId}
@@ -608,6 +573,11 @@
       const mm = String(Math.floor(s/60)).padStart(2,"0");
       const ss = String(s%60).padStart(2,"0");
       return `${mm}:${ss}`;
+    }
+
+    function setPosStatus(){
+      if(!pos){ $("posStatus").textContent = "No position"; return; }
+      $("posStatus").textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON • round ${pos.roundId}`;
     }
 
     async function loadState(){
@@ -635,25 +605,15 @@
     }
 
     async function loadBalance(){
-      // ожидаем, что /api/balance может брать user из initData на сервере
       const data = await apiGet("/api/balance");
-      // попробуем разные поля (на всякий)
       const ton = Number(data.balanceTon ?? data.ton ?? data.balance ?? 0);
       $("balTon").textContent = ton.toFixed(2);
       $("netStatus").textContent = "online";
     }
 
     // ---------------------------
-    // Actions: LONG / SHORT
+    // LONG / SHORT
     // ---------------------------
-    function setPosStatus(){
-      if(!pos){
-        $("posStatus").textContent = "No position";
-        return;
-      }
-      $("posStatus").textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON • round ${pos.roundId}`;
-    }
-
     async function place(side){
       if(!currentRound?.roundId){
         $("hint").textContent = "Нет активного раунда. Подожди…";
@@ -665,11 +625,9 @@
           side,                     // "long" | "short"
           amountTon: selectedAmt,   // сумма TON
           roundId: currentRound.roundId
-          // если у тебя нужно ещё address/initData — сервер возьмёт из tg.initData или добавим позже
         };
-        const res = await apiPost("/api/bet_place", payload);
+        await apiPost("/api/bet_place", payload);
 
-        // ожидаем ok
         pos = { side, amount: selectedAmt, roundId: currentRound.roundId };
         setPosStatus();
         $("hint").textContent = "Ставка принята ✅";
@@ -685,26 +643,32 @@
     $("btnShort").onclick = () => place("short");
 
     // ---------------------------
-    // Wallet / Topup buttons (пока UI, логику сделаем следом)
+    // Buttons: TOPUP / BALANCE
     // ---------------------------
-    $("btnWallet").onclick = async () => {
-      // Тут позже подключим TON Connect UI как в твоём прошлом проекте
-      $("hint").textContent = "Кошелёк: подключим TON Connect следующим шагом.";
-      setTab("trade");
+    $("btnBalance").onclick = async () => {
+      // просто обновим баланс
+      try{
+        $("hint").textContent = "Обновляю баланс…";
+        await loadBalance();
+        $("hint").textContent = "Баланс обновлён ✅";
+      }catch(e){
+        $("hint").textContent = "Не удалось получить баланс: " + e.message;
+      }
     };
 
     $("btnTopup").onclick = async () => {
       try{
         $("hint").textContent = "Создаю пополнение…";
-        // deposit_intent: на сервере ты выдашь реквизиты/инвойс (как раньше)
+        // твой сервер может ожидать amountTon / amountNano — пока шлём amountTon
         const res = await apiPost("/api/deposit_intent", { amountTon: selectedAmt });
-        // Ожидаемо: res.payUrl или res.invoice или res.address+payload — под твой прошлый формат
-        if(res.payUrl){
-          // если сервер отдаёт ссылку
-          window.open(res.payUrl, "_blank");
-          $("hint").textContent = "Открыл ссылку на оплату.";
+
+        // поддержим разные форматы ответа (как у людей обычно бывает)
+        const payUrl = res.payUrl || res.url || res.paymentUrl || res.link || res.invoiceLink;
+        if(payUrl){
+          openExternal(payUrl);
+          $("hint").textContent = "Открываю оплату…";
         }else{
-          $("hint").textContent = "Intent создан. Следующим шагом подключим оплату (TON Connect).";
+          $("hint").textContent = "deposit_intent создан, но сервер не вернул ссылку (payUrl).";
         }
       }catch(e){
         console.error(e);
