@@ -1,18 +1,18 @@
 const { Redis } = require("@upstash/redis");
-
 module.exports.config = { runtime: "nodejs" };
 
 const BET_MS = 7000;
 const PLAY_MS = 12000;
 const ROUND_MS = BET_MS + PLAY_MS;
 
-const HISTORY_KEY = "round:history"; // list of json strings latest first
-const HISTORY_MAX = 50;
+const HISTORY_KEY = "round:history";               // list JSON: {roundId,pct,ts} newest first
+const LAST_FINALIZED_KEY = "round:lastFinalized";  // number
+const END_PCT_KEY = (rid) => `round:endPct:${rid}`;
 
 function getRedis() {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) throw new Error("Upstash env missing: UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN");
+  if (!url || !token) throw new Error("Missing UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN");
   return new Redis({ url, token });
 }
 
@@ -22,112 +22,91 @@ function roundIdByNow(nowMs) {
 function roundStartAt(roundId) {
   return roundId * ROUND_MS;
 }
-function roundEndAt(roundId) {
-  return roundStartAt(roundId) + ROUND_MS;
-}
-function phaseByNow(nowMs) {
-  const rid = roundIdByNow(nowMs);
-  const start = roundStartAt(rid);
-  const t = nowMs - start;
-  const phase = (t < BET_MS) ? "BET" : "PLAY";
-  const phaseEndsAt = start + ((phase === "BET") ? BET_MS : ROUND_MS);
-  return { rid, start, phase, phaseEndsAt };
+function clamp(x, a, b) {
+  return Math.max(a, Math.min(b, x));
 }
 
-// распределение результата (endPct)
-function pickEndPctByRoundId(roundId) {
-  // детерминированный псевдорандом
-  let x = (roundId * 1103515245 + 12345) >>> 0;
-  function rnd() {
-    x = (x * 1664525 + 1013904223) >>> 0;
-    return x / 4294967296;
+// ===== deterministic RNG by roundId (чтобы результат был одинаковый у всех) =====
+function xmur3(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
   }
-
-  // 50% SHORT: 0..-100
-  // 50% LONG: 0..50 (40%), 50..100 (5%), 100..150 (3%), 150..200 (2%)
-  const r = rnd();
-
-  if (r < 0.50) {
-    // SHORT
-    const u = rnd();
-    const val = -(u * 100); // 0..-100
-    return Number(val.toFixed(4));
-  }
-
-  // LONG
-  const r2 = (r - 0.50) / 0.50; // 0..1 inside LONG block
-  const u = rnd();
-
-  if (r2 < 0.80) {
-    // 40% of total -> 0..50
-    return Number((u * 50).toFixed(4));
-  } else if (r2 < 0.90) {
-    // 5% of total -> 50..100
-    return Number((50 + u * 50).toFixed(4));
-  } else if (r2 < 0.96) {
-    // 3% of total -> 100..150
-    return Number((100 + u * 50).toFixed(4));
-  } else {
-    // 2% of total -> 150..200
-    return Number((150 + u * 50).toFixed(4));
-  }
-}
-
-async function ensureEndPct(redis, roundId) {
-  const key = `round:endPct:${roundId}`;
-  const existing = await redis.get(key);
-  if (typeof existing === "number") return existing;
-  if (typeof existing === "string") {
-    const n = Number(existing);
-    if (isFinite(n)) return n;
-  }
-  const endPct = pickEndPctByRoundId(roundId);
-  await redis.set(key, String(endPct));
-  return endPct;
-}
-
-async function finalizeRound(redis, roundId) {
-  if (roundId < 0) return;
-
-  const now = Date.now();
-  const endAt = roundEndAt(roundId);
-  if (now < endAt) return; // ещё не закончился
-
-  const finalizedKey = `round:finalized:${roundId}`;
-  const already = await redis.get(finalizedKey);
-  if (already) return;
-
-  const endPct = await ensureEndPct(redis, roundId);
-  const winSide = (endPct >= 0) ? "LONG" : "SHORT";
-
-  const item = {
-    roundId,
-    endPct,
-    winSide,
-    startAt: roundStartAt(roundId),
-    endAt,
-    endedAt: endAt
+  return function () {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return h >>> 0;
   };
+}
+function mulberry32(a) {
+  return function () {
+    let t = (a += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function rngForRound(roundId) {
+  const seed = xmur3("round:" + String(roundId))();
+  return mulberry32(seed);
+}
 
-  await redis.lpush(HISTORY_KEY, JSON.stringify(item));
-  await redis.ltrim(HISTORY_KEY, 0, HISTORY_MAX - 1);
-  await redis.set(finalizedKey, "1");
+// ===== распределение (как ты требовал) =====
+// SHORT: 0..-100 = 50%
+// LONG: 0..50 = 40%, 50..100 = 5%, 100..150 = 3%, 150..200 = 2%
+function pickEndPctForRound(roundId) {
+  const r = rngForRound(roundId)();
+
+  // SHORT 50%: 0..-100
+  if (r < 0.50) {
+    const u = rngForRound(roundId)();
+    const v = -(u * 100);
+    return Math.round(clamp(v, -100, 0) * 10) / 10;
+  }
+
+  // LONG 50% распределение внутри LONG
+  const t = (r - 0.50) / 0.50; // 0..1
+  const u = rngForRound(roundId)();
+  if (t < 0.80) return Math.round((u * 50) * 10) / 10;
+  if (t < 0.90) return Math.round((50 + u * 50) * 10) / 10;
+  if (t < 0.96) return Math.round((100 + u * 50) * 10) / 10;
+  return Math.round((150 + u * 50) * 10) / 10;
 }
 
 function safeJson(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
 
-async function getTotals(redis, roundId) {
-  const key = `round:betTotals:${roundId}`;
-  const h = await redis.hgetall(key);
-  // Upstash может вернуть null
-  const longAmount  = Number(h?.longAmount  || 0);
-  const shortAmount = Number(h?.shortAmount || 0);
-  return {
-    longAmount:  isFinite(longAmount) ? longAmount : 0,
-    shortAmount: isFinite(shortAmount) ? shortAmount : 0
-  };
+async function ensureEndPct(redis, roundId) {
+  const key = END_PCT_KEY(roundId);
+  const existing = await redis.get(key);
+  if (existing != null) return Number(existing);
+
+  const endPct = pickEndPctForRound(roundId);
+  // set only if not exists
+  await redis.set(key, String(endPct), { nx: true });
+  return endPct;
+}
+
+async function finalizeRound(redis, roundId) {
+  if (roundId < 0) return;
+
+  const endAt = roundStartAt(roundId) + ROUND_MS;
+  if (Date.now() < endAt) return;
+
+  const endPct = await ensureEndPct(redis, roundId);
+
+  // защита от дубля
+  const lastArr = await redis.lrange(HISTORY_KEY, 0, 0);
+  const last = lastArr?.[0] ? safeJson(lastArr[0]) : null;
+  if (last?.roundId === roundId) return;
+
+  const item = JSON.stringify({ roundId, pct: Number(endPct), ts: endAt });
+  await redis.lpush(HISTORY_KEY, item);
+  await redis.ltrim(HISTORY_KEY, 0, 199);
+  await redis.set(LAST_FINALIZED_KEY, String(roundId));
 }
 
 module.exports = async function handler(req, res) {
@@ -138,36 +117,59 @@ module.exports = async function handler(req, res) {
     const redis = getRedis();
     const now = Date.now();
 
-    const { rid, start, phase, phaseEndsAt } = phaseByNow(now);
-    const endAt = roundEndAt(rid);
-    const nextAt = roundStartAt(rid + 1);
+    const roundId = roundIdByNow(now);
+    const startAt = roundStartAt(roundId);
+    const betEndAt = startAt + BET_MS;
+    const endAt = startAt + ROUND_MS;
 
-    // финализируем несколько предыдущих раундов на всякий случай
-    await finalizeRound(redis, rid - 1);
-    await finalizeRound(redis, rid - 2);
-    await finalizeRound(redis, rid - 3);
+    const phase = now < betEndAt ? "BET" : "PLAY";
+    const phaseEndsAt = phase === "BET" ? betEndAt : endAt;
 
-    // история из upstash
-    const raw = await redis.lrange(HISTORY_KEY, 0, HISTORY_MAX - 1);
-    const history = (raw || []).map(safeJson).filter(Boolean);
+    // важно: заранее создаём endPct текущего раунда, чтобы все клиенты совпадали
+    await ensureEndPct(redis, roundId);
 
-    const currentTotals = await getTotals(redis, rid);
+    // добиваем пропущенные раунды (если никто не дергал вовремя)
+    const lastFinalizedRaw = await redis.get(LAST_FINALIZED_KEY);
+    let lastFinalized = Number.isFinite(Number(lastFinalizedRaw))
+      ? Number(lastFinalizedRaw)
+      : (roundId - 5);
+
+    const target = roundId - 1;
+    let steps = 0;
+    for (let rid = lastFinalized + 1; rid <= target && steps < 50; rid++, steps++) {
+      await finalizeRound(redis, rid);
+    }
+
+    // история последних 10
+    const rawHist = await redis.lrange(HISTORY_KEY, 0, 9);
+    const history = (rawHist || []).map(safeJson).filter(Boolean);
 
     return res.status(200).json({
       ok: true,
       serverNow: now,
+
+      // то, что у тебя уже читает фронт по логам:
+      phase,
+      phaseEndsAt,
+
       betMs: BET_MS,
       playMs: PLAY_MS,
       roundMs: ROUND_MS,
-      phase,
-      phaseEndsAt,
-      round: { roundId: rid, startAt: start, endAt, nextAt },
-      currentTotals,
+      treasuryAddress: process.env.TREASURY_TON_ADDRESS || "",
+
+      round: {
+        roundId,
+        startAt,
+        betEndAt,
+        endAt,
+        nextAt: endAt
+      },
+
+      // ВОТ ЭТО и нужно, чтобы история была НЕ локальная:
       history
     });
   } catch (e) {
     return res.status(500).json({
-      ok: false,
       error: "state_error",
       message: String(e && (e.stack || e.message || e))
     });
