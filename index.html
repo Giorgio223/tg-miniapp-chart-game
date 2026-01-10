@@ -11,10 +11,9 @@
   <!-- TonConnect UI -->
   <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
 
-  <!-- Lightweight Charts v4.2.0 (фиксированная версия) -->
+  <!-- Lightweight Charts v4.2.0 -->
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-
-  <!-- fallback если unpkg не грузится -->
+  <!-- fallback if unpkg blocked -->
   <script>
     (function(){
       function loadFallback(){
@@ -35,6 +34,7 @@
       --text:#f2efff;
       --muted:rgba(242,239,255,.65);
       --green:#31d17c;
+      --yellow:#ffcc33;
       --red:#ff4d4d;
       --purple:#7c4dff;
       --orange:#ff9d2e;
@@ -522,35 +522,15 @@
     </div>
   </div>
 
-  <div class="modalOverlay" id="depositModal">
-    <div class="sheet">
-      <div class="sheetHeader">
-        <div class="sheetTitle">Пополнение</div>
-        <button class="closeBtn" id="depositClose">✕</button>
-      </div>
-
-      <div style="padding:12px;">
-        <input id="depositAmount" class="depositInput" type="number" min="0.1" step="0.1" placeholder="Сколько TON пополнить?">
-
-        <div class="row2">
-          <div class="sheetAction" id="depositBack">Назад</div>
-          <div class="sheetAction" id="depositConfirm">Подтвердить</div>
-        </div>
-
-        <div class="hint" id="depositHint" style="margin-top:10px;"></div>
-      </div>
-    </div>
-  </div>
-
 <script>
 (function(){
   const $ = (id) => document.getElementById(id);
 
-  // ======= TG =======
+  // ===== TG =====
   const tg = window.Telegram?.WebApp;
   try { tg?.ready?.(); tg?.expand?.(); } catch {}
 
-  // ======= API =======
+  // ===== API =====
   const API_BASE = window.API_BASE || location.origin;
   const apiUrl = (path) => new URL(path, API_BASE).toString();
 
@@ -581,7 +561,7 @@
     return j;
   }
 
-  // ======= Chart Error Overlay =======
+  // ===== Chart error overlay =====
   function showChartError(message){
     const card = $("chartCard");
     if(!card) return;
@@ -593,7 +573,7 @@
     overlay.innerHTML = `
       <div class="chartErrorBox">
         Ошибка графика: ${String(message || "unknown")}
-        <small>Проверь загрузку LightweightCharts (unpkg/jsdelivr) и /api/state /api/series.</small>
+        <small>Проверь загрузку LightweightCharts и ответы /api/state /api/series.</small>
       </div>
     `;
     card.appendChild(overlay);
@@ -605,7 +585,7 @@
     if(old) old.remove();
   }
 
-  // ======= WAIT FOR LW (фикс initChartOrError) =======
+  // ===== Wait for lightweight-charts =====
   function waitForLW(cb){
     let tries = 0;
     const t = setInterval(() => {
@@ -615,14 +595,64 @@
         return;
       }
       tries++;
-      if (tries > 55){ // ~8 сек
+      if (tries > 55){
         clearInterval(t);
         cb(false);
       }
     }, 150);
   }
 
-  // ======= TON CONNECT (фикс Telegram Wallet iPhone) =======
+  // ===== Utils =====
+  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+
+  function isValidPoint(p){
+    return p && Number.isFinite(p.value) && Number.isFinite(p.time) && Math.floor(p.time) === p.time;
+  }
+
+  function sanitizePoints(arr){
+    const out = [];
+    const src = Array.isArray(arr) ? arr : [];
+    for (const p of src) {
+      const time = Math.floor(Number(p.time));
+      const value = Number(p.value);
+      if (!Number.isFinite(time) || !Number.isFinite(value)) continue;
+      out.push({ time, value });
+    }
+    out.sort((a,b) => a.time - b.time);
+    const dedup = [];
+    for (const p of out) {
+      const last = dedup[dedup.length - 1];
+      if (last && last.time === p.time) dedup[dedup.length - 1] = p;
+      else dedup.push(p);
+    }
+    return dedup;
+  }
+
+  function safeSetData(series, data){
+    try{
+      const clean = sanitizePoints(data);
+      if (!clean.length) return false;
+      series.setData(clean);
+      return true;
+    }catch(e){
+      console.warn("safeSetData failed:", e);
+      return false;
+    }
+  }
+
+  function safeUpdate(series, point){
+    try{
+      const p = { time: Math.floor(Number(point.time)), value: Number(point.value) };
+      if (!isValidPoint(p)) return false;
+      series.update(p);
+      return true;
+    }catch(e){
+      console.warn("safeUpdate failed:", e, point);
+      return false;
+    }
+  }
+
+  // ===== TON CONNECT (Telegram Wallet iPhone fix) =====
   let __tonCore = null;
   async function tonCore(){
     if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
@@ -635,6 +665,7 @@
     const ls = (localStorage.getItem("walletRaw") || "").trim();
     return ls || null;
   }
+
   async function setWalletFromTonConnect(wallet){
     const addr = (wallet?.account?.address || "").trim();
     if (!addr){
@@ -648,6 +679,7 @@
     const fr = Address.parse(raw).toString({ urlSafe: true, bounceable: false, testOnly: false });
     localStorage.setItem("walletFriendly", fr);
   }
+
   async function getWalletFriendlyLS(){
     const cached = (localStorage.getItem("walletFriendly") || "").trim();
     if (cached) return cached;
@@ -661,8 +693,10 @@
 
   function setBalanceTonUI(v){
     const ton = Number(v) || 0;
-    if ($("balTon")) $("balTon").textContent = ton.toFixed(2);
+    const el = $("balTon");
+    if (el) el.textContent = ton.toFixed(2);
   }
+
   async function refreshBalance(){
     const raw = getWalletRawLS();
     if (!raw){ setBalanceTonUI(0); return 0; }
@@ -673,15 +707,13 @@
     return ton;
   }
 
-  // TonConnect init
   (function initTonConnect(){
     try{
       const TonConnectUI = window.TON_CONNECT_UI?.TonConnectUI;
       if (!TonConnectUI) { window.__tonUI = null; window.__wallet = null; return; }
 
-      // ✅ iPhone Telegram Wallet часто “не возвращается” без twaReturnUrl/returnStrategy
       const isTWA = !!(window.Telegram?.WebApp?.initData || window.Telegram?.WebApp?.initDataUnsafe);
-      const returnUrl = location.href; // вернуться в текущий миниапп
+      const returnUrl = location.href;
 
       const tonUI = new TonConnectUI({
         manifestUrl: location.origin + "/tonconnect-manifest.json",
@@ -732,50 +764,34 @@
     await refreshBalance().catch(()=>{});
   });
 
-  // TON modals
+  // Modal helpers
   const tonModal = $("tonModal");
-  const depositModal = $("depositModal");
   function openTonModal(){ tonModal?.classList.add("open"); }
   function closeTonModal(){ tonModal?.classList.remove("open"); }
-  function openDepositModal(){ depositModal?.classList.add("open"); }
-  function closeDepositModal(){ depositModal?.classList.remove("open"); }
 
-  if ($("btnBalance")) $("btnBalance").onclick = () => openTonModal();
-  if ($("tonClose")) $("tonClose").onclick = () => closeTonModal();
+  $("btnBalance")?.addEventListener("click", () => openTonModal());
+  $("tonClose")?.addEventListener("click", () => closeTonModal());
   tonModal?.addEventListener("click", (e) => { if(e.target === tonModal) closeTonModal(); });
 
-  if ($("depositClose")) $("depositClose").onclick = () => closeDepositModal();
-  if ($("depositBack")) $("depositBack").onclick = () => closeDepositModal();
-  depositModal?.addEventListener("click", (e) => { if(e.target === depositModal) closeDepositModal(); });
-
-  if ($("actionBind")) $("actionBind").onclick = async () => {
+  $("actionBind")?.addEventListener("click", async () => {
     if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
     alert("TonConnect не загрузился или manifest недоступен.");
-  };
+  });
 
-  if ($("actionDisconnect")) $("actionDisconnect").onclick = async () => {
+  $("actionDisconnect")?.addEventListener("click", async () => {
     try{ await window.__tonUI?.disconnect?.(); }catch{}
     localStorage.removeItem("walletRaw");
     localStorage.removeItem("walletFriendly");
     window.__wallet = null;
-    await syncWalletUI();
+    await syncWalletUI().catch(()=>{});
     setBalanceTonUI(0);
     alert("Кошелёк отвязан.");
-  };
-
-  if ($("actionDeposit")) $("actionDeposit").onclick = async () => {
-    alert("Депозит подключим позже (серверная часть).");
-  };
-  if ($("actionWithdraw")) $("actionWithdraw").onclick = () => alert("Вывод добавим позже.");
-  if ($("btnTopup")) $("btnTopup").onclick = async () => {
-    if (!getWalletRawLS()){ openTonModal(); alert("Сначала привяжи кошелёк."); return; }
-    openDepositModal();
-  };
+  });
 
   // BONUS
   const bonusOverlay = $("bonusOverlay");
-  if ($("btnBonus")) $("btnBonus").onclick = () => bonusOverlay.style.display = "flex";
-  if ($("btnBonusClose")) $("btnBonusClose").onclick = () => bonusOverlay.style.display = "none";
+  $("btnBonus")?.addEventListener("click", () => bonusOverlay.style.display = "flex");
+  $("btnBonusClose")?.addEventListener("click", () => bonusOverlay.style.display = "none");
   bonusOverlay?.addEventListener("click", (e) => { if(e.target === bonusOverlay) bonusOverlay.style.display = "none"; });
 
   // Chips
@@ -786,21 +802,20 @@
     document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
     chip.classList.add("active");
     selectedAmt = Number(chip.dataset.amt || "0.1");
-    if ($("betAmt")) $("betAmt").textContent = selectedAmt.toFixed(2);
+    const b = $("betAmt");
+    if (b) b.textContent = selectedAmt.toFixed(2);
   });
 
-  // ======= GAME / CHART =======
+  // ===== Chart / Game =====
   let chart = null;
   let area = null;
   let bound = null;
 
   const endOrb = $("endOrb");
 
-  // диапазон, как у сервера
+  // range should match server
   const MIN_Y = -100;
   const MAX_Y = 200;
-
-  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 
   function applySeriesColorByValue(v){
     const isGreen = (Number(v) >= 0);
@@ -810,36 +825,48 @@
     try{ area.applyOptions({ lineColor: line, topColor: top, bottomColor: bot }); }catch{}
   }
 
-  // камера (Y) с инерцией
+  // camera follow Y
   let camCenter = 0;
   const CAM_WINDOW = 85;
   const CAM_EASE = 0.08;
 
   function ensureBoundNow(targetValue){
     if(!bound) return;
-    const now = Math.floor(Date.now()/1000);
 
+    const now = Math.floor(Date.now()/1000);
     const target = Number.isFinite(targetValue) ? targetValue : 0;
     camCenter = camCenter + (target - camCenter) * CAM_EASE;
 
     const lo = clamp(camCenter - CAM_WINDOW, MIN_Y, MAX_Y);
     const hi = clamp(camCenter + CAM_WINDOW, MIN_Y, MAX_Y);
 
-    bound.setData([{ time: now-2, value: lo }, { time: now-1, value: hi }]);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
+
+    try{
+      bound.setData([{ time: now-2, value: lo }, { time: now-1, value: hi }]);
+    }catch(e){
+      console.warn("bound.setData failed:", e);
+    }
   }
 
-  // кружок на последней точке
+  // orb
   let lastOrbPoint = null;
   let orbRAF = 0;
+
   function placeOrbAtPoint(pt){
-    if(!chart || !area || !endOrb || !pt) return;
-    const x = chart.timeScale().timeToCoordinate(pt.time);
-    const y = area.priceToCoordinate(pt.value);
-    if (x == null || y == null) return;
-    endOrb.style.left = x + "px";
-    endOrb.style.top  = y + "px";
-    endOrb.style.display = "block";
+    try{
+      if(!chart || !area || !endOrb || !pt) return;
+      const x = chart.timeScale().timeToCoordinate(pt.time);
+      const y = area.priceToCoordinate(pt.value);
+      if (x == null || y == null) return;
+      endOrb.style.left = x + "px";
+      endOrb.style.top  = y + "px";
+      endOrb.style.display = "block";
+    }catch(e){
+      console.warn("placeOrbAtPoint failed:", e);
+    }
   }
+
   function scheduleOrbRecalc(){
     if(orbRAF) cancelAnimationFrame(orbRAF);
     orbRAF = requestAnimationFrame(() => { if(lastOrbPoint) placeOrbAtPoint(lastOrbPoint); });
@@ -849,14 +876,16 @@
     const n = Number(ts);
     if(!Number.isFinite(n)) return Math.floor(Date.now()/1000);
     if(n > 2e10) return Math.floor(n/1000); // ms
-    return Math.floor(n);
+    return Math.floor(n); // sec
   }
+
   function toChartData(seriesArr){
     const arr = Array.isArray(seriesArr) ? seriesArr : [];
-    return arr
+    const pts = arr
       .map(([ts, pct]) => ({ time: normalizeTsToSec(ts), value: Number(pct) }))
       .filter(p => Number.isFinite(p.time) && Number.isFinite(p.value))
       .sort((a,b) => a.time - b.time);
+    return sanitizePoints(pts);
   }
 
   function initChartOrError(){
@@ -869,6 +898,7 @@
 
     clearChartError();
 
+    // keep orb node
     const orb = endOrb;
     el.innerHTML = "";
     if (orb) el.appendChild(orb);
@@ -909,18 +939,23 @@
       axisLabelVisible: true,
       title: t
     });
-    mkPL(200,"200%"); mkPL(150,"150%"); mkPL(100,"100%"); mkPL(50,"50%");
-    mkPL(0,"0%"); mkPL(-50,"-50%"); mkPL(-100,"-100%");
+    mkPL(200,"200%");
+    mkPL(150,"150%");
+    mkPL(100,"100%");
+    mkPL(50,"50%");
+    mkPL(0,"0%");
+    mkPL(-50,"-50%");
+    mkPL(-100,"-100%");
 
-    // seed
     const now = Math.floor(Date.now()/1000);
-    const seed = [
+    const seed = sanitizePoints([
       { time: now-6, value: 0 },
       { time: now-4, value: 8 },
       { time: now-2, value: -6 },
       { time: now, value: 4 }
-    ];
-    area.setData(seed);
+    ]);
+
+    safeSetData(area, seed);
     lastOrbPoint = seed[seed.length-1];
     applySeriesColorByValue(lastOrbPoint.value);
     ensureBoundNow(lastOrbPoint.value);
@@ -939,9 +974,10 @@
     return true;
   }
 
-  // плавная “волна” между точками
+  // smooth waves animation between points
   let cached = [];
   let lastFitDone = false;
+
   const anim = { active:false, from:null, to:null, t0:0, dur:600 };
 
   function startTween(fromPt, toPt){
@@ -952,21 +988,22 @@
     anim.t0 = performance.now();
     tickTween();
   }
+
   function tickTween(){
     if(!anim.active || !area) return;
     const t = performance.now();
     const p = Math.min(1, (t - anim.t0) / anim.dur);
 
-    // волна: ease + лёгкая синусоида (очень приятный “кач”)
     const ease = 1 - Math.pow(1 - p, 3);
-    const wave = Math.sin(p * Math.PI) * 0.06; // 6% волна
+    const wave = Math.sin(p * Math.PI) * 0.06;
     const k = clamp(ease + wave, 0, 1);
 
     const v = anim.from.value + (anim.to.value - anim.from.value) * k;
 
-    area.update({ time: anim.to.time, value: v });
-    applySeriesColorByValue(v);
+    const ok = safeUpdate(area, { time: anim.to.time, value: v });
+    if (!ok){ anim.active = false; return; }
 
+    applySeriesColorByValue(v);
     lastOrbPoint = { time: anim.to.time, value: v };
     ensureBoundNow(v);
     scheduleOrbRecalc();
@@ -976,13 +1013,14 @@
   }
 
   function applySeriesPoints(points){
-    if(!chart || !area || !Array.isArray(points) || points.length === 0) return;
+    if(!chart || !area) return;
 
-    const incoming = points.slice(-900);
+    const incoming = sanitizePoints(points).slice(-900);
+    if (!incoming.length) return;
 
     if(cached.length === 0){
       cached = incoming;
-      area.setData(cached);
+      safeSetData(area, cached);
       const last = cached[cached.length-1];
       applySeriesColorByValue(last.value);
       lastOrbPoint = last;
@@ -1004,7 +1042,7 @@
 
     if(newOnes.length){
       for (let i=0;i<newOnes.length-1;i++){
-        area.update(newOnes[i]);
+        safeUpdate(area, newOnes[i]);
         cached.push(newOnes[i]);
       }
       const tgt = newOnes[newOnes.length-1];
@@ -1021,10 +1059,11 @@
     if(cached.length > 1200) cached = cached.slice(-900);
   }
 
-  // ======= Countdown + History + Toast =======
+  // ===== Countdown / History / Toast =====
   const cdEl = $("countdown");
   const cdNumEl = $("cdNum");
   const cdRingEl = $("cdRing");
+
   const R = 46;
   const CIRC = 2 * Math.PI * R;
   if (cdRingEl){
@@ -1050,6 +1089,7 @@
     const arr = Array.isArray(items) ? items : [];
     for (const it of arr.slice(0, 12)) {
       const pct = Number(it.pct || 0);
+
       const wrap = document.createElement("div");
       wrap.className = "histItem";
 
@@ -1079,11 +1119,10 @@
     }, 1500);
   }
 
-  // ======= State / Series / Round logic =======
+  // ===== State / Series / Round =====
   let currentRound = null;
   let lastRoundIdSeen = null;
   let betMs = 7000;
-  let roundMs = 19000;
   let timeOffsetMs = 0;
 
   function serverNow(){ return Date.now() + timeOffsetMs; }
@@ -1093,10 +1132,10 @@
     timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
     currentRound = data.round;
     betMs = data.betMs || 7000;
-    roundMs = data.roundMs || 19000;
+
     renderHistory(data.history || []);
 
-    // ✅ новый раунд -> визуально стартуем с 0%
+    // new round => visual start from 0%
     if (lastRoundIdSeen == null) lastRoundIdSeen = currentRound?.roundId;
     if (currentRound && lastRoundIdSeen !== currentRound.roundId){
       lastRoundIdSeen = currentRound.roundId;
@@ -1106,14 +1145,12 @@
       camCenter = 0;
 
       const t = Math.floor((data.serverNow || Date.now()) / 1000);
-      try{
-        area.setData([{ time: t, value: 0 }]);
-        applySeriesColorByValue(0);
-        lastOrbPoint = { time: t, value: 0 };
-        ensureBoundNow(0);
-        chart.timeScale().fitContent();
-        scheduleOrbRecalc();
-      }catch{}
+      safeSetData(area, [{ time: t, value: 0 }]);
+      applySeriesColorByValue(0);
+      lastOrbPoint = { time: t, value: 0 };
+      ensureBoundNow(0);
+      try{ chart.timeScale().fitContent(); }catch{}
+      scheduleOrbRecalc();
     }
   }
 
@@ -1121,6 +1158,7 @@
     const data = await apiGet("/api/series?t=" + Date.now());
     const points = toChartData(data.series);
     if(!points.length) return;
+
     applySeriesPoints(points);
     clearChartError();
   }
@@ -1147,16 +1185,22 @@
     }
   }
 
-  // ======= Bets =======
+  // ===== Betting (если у тебя API уже есть) =====
   let pos = null;
-  function setHint(text){ if ($("hint")) $("hint").textContent = text || ""; }
+
+  function setHint(text){
+    const h = $("hint");
+    if (h) h.textContent = text || "";
+  }
   function setPosStatus(){
-    if(!$("posStatus")) return;
-    if(!pos){ $("posStatus").textContent = "—"; return; }
-    $("posStatus").textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON`;
+    const el = $("posStatus");
+    if(!el) return;
+    if(!pos){ el.textContent = "—"; return; }
+    el.textContent = `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON`;
   }
 
   let bettingOpen = false;
+
   function setButtonsEnabled(on){
     const b1 = $("btnLong");
     const b2 = $("btnShort");
@@ -1209,6 +1253,7 @@
   $("btnShort")?.addEventListener("click", () => place("short"));
 
   let lastSettledRound = null;
+
   async function trySettleIfNeeded(){
     if(!pos || !currentRound) return;
 
@@ -1242,28 +1287,10 @@
     }catch(e){}
   }
 
-  // ======= Boot sequence =======
-  function bootLoops(){
-    // аккуратные циклы
-    setInterval(() => loadState().catch(()=>{}), 800);
-    setInterval(() => loadSeries().catch(()=>{}), 320);
-    setInterval(() => updateBetCountdown(), 120);
-    setInterval(() => trySettleIfNeeded(), 600);
-    setInterval(() => refreshBalance().catch(()=>{}), 6500);
-
-    // в бет-фазе включаем кнопки
-    setInterval(() => {
-      if(!currentRound) return;
-      const nowS = serverNow();
-      setButtonsEnabled(nowS >= currentRound.startAt && nowS < currentRound.endAt);
-    }, 150);
-  }
-
-  // старт
+  // ===== boot =====
   setPosStatus();
   setHint("");
 
-  // ждать LW и только потом initChart
   waitForLW(async (ready) => {
     if(!ready){
       showChartError("LightweightCharts не загрузился (CDN/сеть).");
@@ -1278,7 +1305,19 @@
     await loadState().catch(()=>{});
     await loadSeries().catch(()=>{});
 
-    bootLoops();
+    // loops
+    setInterval(() => loadState().catch(()=>{}), 800);
+    setInterval(() => loadSeries().catch(()=>{}), 320);
+    setInterval(() => updateBetCountdown(), 120);
+    setInterval(() => trySettleIfNeeded(), 600);
+    setInterval(() => refreshBalance().catch(()=>{}), 6500);
+
+    // enable bet buttons only in bet window
+    setInterval(() => {
+      if(!currentRound) return;
+      const nowS = serverNow();
+      setButtonsEnabled(nowS >= currentRound.startAt && nowS < currentRound.endAt);
+    }, 150);
   });
 
 })();
