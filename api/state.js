@@ -5,7 +5,7 @@ const BET_MS = 7000;
 const PLAY_MS = 12000;
 const ROUND_MS = BET_MS + PLAY_MS;
 
-const HISTORY_KEY = "round:history";               // list JSON: {roundId,pct,ts} newest first
+const HISTORY_KEY = "round:history";               // list newest first: {roundId,pct,ts}
 const LAST_FINALIZED_KEY = "round:lastFinalized";  // number
 const END_PCT_KEY = (rid) => `round:endPct:${rid}`;
 
@@ -16,17 +16,10 @@ function getRedis() {
   return new Redis({ url, token });
 }
 
-function roundIdByNow(nowMs) {
-  return Math.floor(nowMs / ROUND_MS);
-}
-function roundStartAt(roundId) {
-  return roundId * ROUND_MS;
-}
-function clamp(x, a, b) {
-  return Math.max(a, Math.min(b, x));
-}
+function roundIdByNow(nowMs) { return Math.floor(nowMs / ROUND_MS); }
+function roundStartAt(roundId) { return roundId * ROUND_MS; }
+function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 
-// ===== deterministic RNG by roundId (чтобы результат был одинаковый у всех) =====
 function xmur3(str) {
   let h = 1779033703 ^ str.length;
   for (let i = 0; i < str.length; i++) {
@@ -53,20 +46,16 @@ function rngForRound(roundId) {
   return mulberry32(seed);
 }
 
-// ===== распределение (как ты требовал) =====
 // SHORT: 0..-100 = 50%
 // LONG: 0..50 = 40%, 50..100 = 5%, 100..150 = 3%, 150..200 = 2%
 function pickEndPctForRound(roundId) {
   const r = rngForRound(roundId)();
 
-  // SHORT 50%: 0..-100
   if (r < 0.50) {
     const u = rngForRound(roundId)();
-    const v = -(u * 100);
-    return Math.round(clamp(v, -100, 0) * 10) / 10;
+    return Math.round(clamp(-(u * 100), -100, 0) * 10) / 10;
   }
 
-  // LONG 50% распределение внутри LONG
   const t = (r - 0.50) / 0.50; // 0..1
   const u = rngForRound(roundId)();
   if (t < 0.80) return Math.round((u * 50) * 10) / 10;
@@ -75,9 +64,7 @@ function pickEndPctForRound(roundId) {
   return Math.round((150 + u * 50) * 10) / 10;
 }
 
-function safeJson(s) {
-  try { return JSON.parse(s); } catch { return null; }
-}
+function safeJson(s){ try{ return JSON.parse(s); } catch { return null; } }
 
 async function ensureEndPct(redis, roundId) {
   const key = END_PCT_KEY(roundId);
@@ -85,7 +72,6 @@ async function ensureEndPct(redis, roundId) {
   if (existing != null) return Number(existing);
 
   const endPct = pickEndPctForRound(roundId);
-  // set only if not exists
   await redis.set(key, String(endPct), { nx: true });
   return endPct;
 }
@@ -98,7 +84,6 @@ async function finalizeRound(redis, roundId) {
 
   const endPct = await ensureEndPct(redis, roundId);
 
-  // защита от дубля
   const lastArr = await redis.lrange(HISTORY_KEY, 0, 0);
   const last = lastArr?.[0] ? safeJson(lastArr[0]) : null;
   if (last?.roundId === roundId) return;
@@ -125,47 +110,34 @@ module.exports = async function handler(req, res) {
     const phase = now < betEndAt ? "BET" : "PLAY";
     const phaseEndsAt = phase === "BET" ? betEndAt : endAt;
 
-    // важно: заранее создаём endPct текущего раунда, чтобы все клиенты совпадали
+    // создаём финал текущего раунда
     await ensureEndPct(redis, roundId);
 
-    // добиваем пропущенные раунды (если никто не дергал вовремя)
+    // финализируем пропущенные
     const lastFinalizedRaw = await redis.get(LAST_FINALIZED_KEY);
     let lastFinalized = Number.isFinite(Number(lastFinalizedRaw))
       ? Number(lastFinalizedRaw)
-      : (roundId - 5);
+      : (roundId - 6);
 
     const target = roundId - 1;
-    let steps = 0;
-    for (let rid = lastFinalized + 1; rid <= target && steps < 50; rid++, steps++) {
+    for (let rid = lastFinalized + 1, steps=0; rid <= target && steps < 80; rid++, steps++) {
       await finalizeRound(redis, rid);
     }
 
-    // история последних 10
+    // history последние 10
     const rawHist = await redis.lrange(HISTORY_KEY, 0, 9);
     const history = (rawHist || []).map(safeJson).filter(Boolean);
 
     return res.status(200).json({
       ok: true,
       serverNow: now,
-
-      // то, что у тебя уже читает фронт по логам:
       phase,
       phaseEndsAt,
-
       betMs: BET_MS,
       playMs: PLAY_MS,
       roundMs: ROUND_MS,
       treasuryAddress: process.env.TREASURY_TON_ADDRESS || "",
-
-      round: {
-        roundId,
-        startAt,
-        betEndAt,
-        endAt,
-        nextAt: endAt
-      },
-
-      // ВОТ ЭТО и нужно, чтобы история была НЕ локальная:
+      round: { roundId, startAt, betEndAt, endAt, nextAt: endAt },
       history
     });
   } catch (e) {
