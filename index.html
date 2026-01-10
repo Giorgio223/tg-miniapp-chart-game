@@ -99,10 +99,8 @@
       position: relative;
     }
 
-    /* ЖЁСТКО прячем любые ссылки/вотермарки внутри графика */
+    /* убрать любые ссылки/вотермарки */
     #chart a, #chart [class*="watermark"], #chart [id*="watermark"]{display:none!important; opacity:0!important; pointer-events:none!important;}
-    #chart .tv-lightweight-charts a{display:none!important;}
-    #chart canvas + div{pointer-events:none;} /* на всякий */
 
     .endOrb{
       position:absolute;
@@ -162,13 +160,10 @@
       text-transform: uppercase;
     }
 
-    /* Оверлей чтобы прятать цифры шкалы в BET */
+    /* оверлей шкалы (скрыть цифры во время BET) */
     .scaleCover{
-      position:absolute;
-      top:0;
-      right:0;
-      width:86px;
-      height:100%;
+      position:absolute; top:0; right:0;
+      width:86px; height:100%;
       background: linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.22));
       display:none;
       z-index: 19;
@@ -176,7 +171,7 @@
     }
     .scaleCover.show{display:block;}
 
-    /* Наш единый бейдж значения (чтобы не было “2 значений”) */
+    /* единственный бейдж значения справа */
     .valueBadge{
       position:absolute;
       right: 10px;
@@ -199,15 +194,6 @@
       left:14px;
       bottom:14px;
       z-index: 25;
-      display:flex;
-      align-items:flex-end;
-      gap:10px;
-      pointer-events:none;
-    }
-    .histCol{
-      display:flex;
-      flex-direction:column;
-      gap:8px;
       pointer-events:none;
     }
     .histRow{
@@ -223,34 +209,30 @@
       overflow:hidden;
     }
     .histItem{
-      display:flex;
-      align-items:center;
-      gap:6px;
-      font-weight:1000;
-      font-size:11px;
+      display:flex; align-items:center; gap:6px;
+      font-weight:1000; font-size:11px;
       color: rgba(242,239,255,.92);
       white-space:nowrap;
     }
     .tri{
-      width: 0; height: 0;
-      border-left: 7px solid transparent;
-      border-right: 7px solid transparent;
-      position: relative;
+      width:0;height:0;
+      border-left:7px solid transparent;
+      border-right:7px solid transparent;
+      position:relative;
       filter: drop-shadow(0 8px 18px rgba(0,0,0,.35));
     }
     .tri.up{ border-bottom: 12px solid var(--green); }
     .tri.down{ border-top: 12px solid var(--red); }
     .tri::after{
       content:"";
-      position:absolute;
-      left:-5px;
+      position:absolute; left:-5px;
       width:0;height:0;
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
+      border-left:5px solid transparent;
+      border-right:5px solid transparent;
     }
     .tri.up::after{ top:2px; border-bottom: 9px solid rgba(255,255,255,.92); }
     .tri.down::after{ top:-11px; border-top: 9px solid rgba(255,255,255,.92); }
-    .pctText{ min-width: 52px; text-align:right; }
+    .pctText{ min-width:52px; text-align:right; }
 
     .toast{
       position:absolute;
@@ -377,13 +359,10 @@
     .row2{display:flex;gap:10px;margin-top:12px;}
     .row2 .sheetAction{flex:1 1 0;justify-content:center;}
 
-    /* ===== Debug UI ===== */
+    /* Debug */
     .dbgBtn{
-      position:fixed;
-      right:12px;
-      bottom:12px;
-      z-index:9999;
-      width:52px;height:52px;
+      position:fixed; right:12px; bottom:12px;
+      z-index:9999; width:52px; height:52px;
       border-radius:16px;
       border:1px solid rgba(255,255,255,.14);
       background: rgba(0,0,0,.22);
@@ -393,9 +372,7 @@
       box-shadow: 0 18px 45px rgba(0,0,0,.55);
     }
     .dbgPanel{
-      position:fixed;
-      right:12px;
-      bottom:72px;
+      position:fixed; right:12px; bottom:72px;
       z-index:9999;
       width:min(520px, calc(100vw - 24px));
       max-height: 52vh;
@@ -414,6 +391,20 @@
       color: rgba(242,239,255,.90);
     }
     .dbgPanel.show{display:block;}
+
+    /* Loading overlay */
+    .loading{
+      position:absolute; inset:0;
+      z-index: 60;
+      display:none;
+      align-items:center; justify-content:center;
+      background: radial-gradient(900px 520px at 50% 0%, rgba(124,77,255,.18), rgba(0,0,0,.25));
+      backdrop-filter: blur(6px);
+      font-weight:1100;
+      letter-spacing:.2px;
+      color: rgba(242,239,255,.92);
+    }
+    .loading.show{display:flex;}
   </style>
 </head>
 
@@ -434,6 +425,7 @@
     <div class="grid">
       <div class="card" id="chartCard">
         <div id="chart">
+          <div class="loading" id="loading">Загрузка…</div>
           <div class="scaleCover" id="scaleCover"></div>
           <div class="valueBadge mono" id="valueBadge">0%</div>
           <div class="endOrb" id="endOrb"></div>
@@ -460,9 +452,7 @@
         </div>
 
         <div class="historyWrap">
-          <div class="histCol">
-            <div class="histRow" id="histRow"></div>
-          </div>
+          <div class="histRow" id="histRow"></div>
         </div>
 
         <div class="toast" id="toast"></div>
@@ -563,14 +553,9 @@
     }catch{}
   }
   dbgBtn.addEventListener("click", () => dbgPanel.classList.toggle("show"));
-
   window.addEventListener("error", (e) => dbg("window.error: " + (e?.message || e)));
   window.addEventListener("unhandledrejection", (e) => dbg("unhandledrejection: " + (e?.reason?.message || e?.reason || e)));
 
-  const _ce = console.error.bind(console);
-  console.error = (...args) => { _ce(...args); dbg("console.error: " + args.map(a=>String(a)).join(" ")); };
-
-  // ===== TG =====
   const tg = window.Telegram?.WebApp;
   try { tg?.ready?.(); tg?.expand?.(); } catch {}
 
@@ -602,7 +587,6 @@
     return j;
   }
 
-  // ===== Hint / Toast =====
   function setHint(t){
     const el = $("hint");
     if (el) el.textContent = t || "";
@@ -626,7 +610,13 @@
     }, 1700);
   }
 
-  // ===== Chips =====
+  // ===== UI =====
+  const loading = $("loading");
+  const scaleCover = $("scaleCover");
+  const valueBadge = $("valueBadge");
+  const endOrb = $("endOrb");
+
+  // chips
   let selectedAmt = 0.10;
   $("chips")?.addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
@@ -637,68 +627,11 @@
     $("betAmt").textContent = selectedAmt.toFixed(2);
   });
 
-  // ===== History (local) =====
-  const LS_HIST = "localHistory_v3";
-  function readLocalHistory(){
-    try{
-      const raw = localStorage.getItem(LS_HIST);
-      const arr = JSON.parse(raw || "[]");
-      return Array.isArray(arr) ? arr : [];
-    }catch{ return []; }
-  }
-  function pushLocalHistory(pct){
-    const v = Number(pct);
-    if (!Number.isFinite(v)) return;
-    const arr = readLocalHistory();
-    // защита от дубля подряд
-    if (arr.length && Math.round(Number(arr[0].pct)) === Math.round(v)) return;
-    arr.unshift({ pct: v, ts: Date.now() });
-    const trimmed = arr.slice(0, 50);
-    try{ localStorage.setItem(LS_HIST, JSON.stringify(trimmed)); }catch{}
-  }
-
-  function renderHistory(serverItems){
-    const row = $("histRow");
-    if(!row) return;
-    row.innerHTML = "";
-
-    const serverArr = Array.isArray(serverItems) ? serverItems : [];
-    const localArr = readLocalHistory();
-    const merged = serverArr.length ? serverArr : localArr;
-
-    if (!merged.length) {
-      const wrap = document.createElement("div");
-      wrap.className = "histItem";
-      wrap.style.opacity = "0.75";
-      wrap.textContent = "История пока пуста";
-      row.appendChild(wrap);
-      return;
-    }
-
-    for (const it of merged.slice(0, 10)) {
-      const pct = Number(it?.pct ?? it?.endPct ?? it?.resultPct ?? it?.value ?? 0);
-      const wrap = document.createElement("div");
-      wrap.className = "histItem";
-
-      const tri = document.createElement("div");
-      tri.className = "tri " + (pct >= 0 ? "up" : "down");
-
-      const txt = document.createElement("div");
-      txt.className = "pctText mono";
-      txt.textContent = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
-
-      wrap.appendChild(tri);
-      wrap.appendChild(txt);
-      row.appendChild(wrap);
-    }
-  }
-
   // ===== Countdown =====
   const cdEl = $("countdown");
   const cdNumEl = $("cdNum");
   const cdSubEl = $("cdSub");
   const cdRingEl = $("cdRing");
-
   const R = 46;
   const CIRC = 2 * Math.PI * R;
   if (cdRingEl){
@@ -717,19 +650,344 @@
     else cdRingEl.setAttribute("stroke", "rgba(255,77,77,.95)");
   }
 
-  // ===== Server time =====
+  // ===== Server time offset =====
   let timeOffsetMs = 0;
   function serverNow(){ return Date.now() + timeOffsetMs; }
 
-  // ===== lastState чтобы BET не ломался =====
-  let lastState = null;
+  // ===== History (ТОЛЬКО сервер) =====
+  function renderHistory(serverItems){
+    const row = $("histRow");
+    if(!row) return;
+    row.innerHTML = "";
+    const arr = Array.isArray(serverItems) ? serverItems : [];
 
-  // ===== Current =====
+    if (!arr.length) {
+      const wrap = document.createElement("div");
+      wrap.className = "histItem";
+      wrap.style.opacity = "0.75";
+      wrap.textContent = "История пустая (сервер не отдаёт history)";
+      row.appendChild(wrap);
+      return;
+    }
+
+    for (const it of arr.slice(0, 10)) {
+      const pct = Number(it?.pct ?? it?.endPct ?? it?.resultPct ?? it?.value ?? 0);
+
+      const wrap = document.createElement("div");
+      wrap.className = "histItem";
+
+      const tri = document.createElement("div");
+      tri.className = "tri " + (pct >= 0 ? "up" : "down");
+
+      const txt = document.createElement("div");
+      txt.className = "pctText mono";
+      txt.textContent = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
+
+      wrap.appendChild(tri);
+      wrap.appendChild(txt);
+      row.appendChild(wrap);
+    }
+  }
+
+  // ===== Chart =====
+  let chart=null, area=null, bound=null;
+
+  const MIN_Y = -100;
+  const MAX_Y = 200;
+
+  // камера
+  let camCenter = 0;
+  const CAM_WINDOW = 60;
+  const CAM_EASE = 0.08;
+
+  // данные анимации
+  let points = [];          // [{time, value}] time in seconds
+  let baseData = [];        // уже добавленные точки
+  let idx = 0;              // текущий индекс следующей точки
+  let cur = 0;              // текущее значение (интерполированное)
+  let running = false;
+  let rafId = 0;
+
+  function applySeriesColorByValue(v){
+    const isGreen = (Number(v) >= 0);
+    const line = isGreen ? "rgba(49,209,124,.95)" : "rgba(255,77,77,.95)";
+    const top  = isGreen ? "rgba(49,209,124,.26)" : "rgba(255,77,77,.22)";
+    try{ area.applyOptions({ lineColor: line, topColor: top, bottomColor: "rgba(0,0,0,0)" }); }catch{}
+  }
+
+  function ensureBoundNow(v, tSec){
+    if(!bound) return;
+    camCenter = camCenter + (v - camCenter) * CAM_EASE;
+    const lo = clamp(camCenter - CAM_WINDOW, MIN_Y, MAX_Y);
+    const hi = clamp(camCenter + CAM_WINDOW, MIN_Y, MAX_Y);
+    const tt = tSec ?? (points[idx-1]?.time ?? Math.floor(Date.now()/1000));
+    try{ bound.setData([{ time: tt-1, value: lo }, { time: tt, value: hi }]); }catch{}
+  }
+
+  function updateValueBadge(){
+    const v = Math.round(Number(cur) || 0);
+    valueBadge.textContent = (v > 0 ? "+" : "") + v + "%";
+  }
+
+  function placeOrb(timeSec, value){
+    try{
+      if(!chart || !area || !endOrb) return;
+      const x = chart.timeScale().timeToCoordinate(timeSec);
+      const y = area.priceToCoordinate(value);
+      if (x == null || y == null) return;
+      endOrb.style.left = x + "px";
+      endOrb.style.top  = y + "px";
+      endOrb.style.display = "block";
+    }catch{}
+  }
+
+  function initChart(){
+    const el = $("chart");
+    if(!el || !window.LightweightCharts?.createChart) return false;
+
+    chart = LightweightCharts.createChart(el, {
+      width: Math.max(320, el.clientWidth || 900),
+      height: 360,
+      layout: { background: { type:"solid", color:"transparent" }, textColor: "rgba(242,239,255,.55)" },
+      grid: { vertLines: { color: "rgba(255,255,255,.04)" }, horzLines: { color: "rgba(255,255,255,.05)" } },
+      rightPriceScale: {
+        visible: true,
+        borderColor: "rgba(255,255,255,.10)",
+        scaleMargins: { top: 0.10, bottom: 0.12 }
+      },
+      timeScale: { borderColor: "rgba(255,255,255,.10)", timeVisible:false, secondsVisible:false },
+      crosshair: { vertLine: { visible:false }, horzLine: { visible:false } },
+      watermark: { visible: false }
+    });
+
+    const curved =
+      window.LightweightCharts &&
+      window.LightweightCharts.LineType &&
+      window.LightweightCharts.LineType.Curved;
+
+    area = chart.addAreaSeries({
+      lineWidth: 2,
+      lineType: curved ? window.LightweightCharts.LineType.Curved : undefined,
+      lineColor: "rgba(49,209,124,.95)",
+      topColor: "rgba(49,209,124,.26)",
+      bottomColor: "rgba(0,0,0,0)",
+      priceFormat: { type:"custom", formatter: (v) => `${Math.round(Number(v))}%` },
+      priceLineVisible: false,
+      lastValueVisible: false
+    });
+
+    bound = chart.addLineSeries({
+      color: "rgba(0,0,0,0)",
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+
+    const ro = new ResizeObserver(() => {
+      try{ chart.resize(Math.max(320, el.clientWidth || 900), 360); }catch{}
+    });
+    ro.observe(el);
+
+    return true;
+  }
+
+  // ===== series processing: меньше “мелкой дрожи”, больше трендов =====
+  function toSec(x){
+    // backend может вернуть ms или sec — приводим к sec
+    const n = Number(x);
+    if (!Number.isFinite(n)) return null;
+    return n > 3e10 ? Math.floor(n / 1000) : Math.floor(n); // ms -> sec
+  }
+
+  function downsample(arr, maxPoints){
+    if (arr.length <= maxPoints) return arr;
+    const step = Math.ceil(arr.length / maxPoints);
+    const out = [];
+    for (let i=0;i<arr.length;i+=step) out.push(arr[i]);
+    if (out[out.length-1].time !== arr[arr.length-1].time) out.push(arr[arr.length-1]);
+    return out;
+  }
+
+  function smoothValues(arr){
+    // лёгкое сглаживание, чтобы были “реки/горы”, а не “дрожь”
+    const alpha = 0.18; // меньше = сильнее сглаживание
+    let prev = arr[0]?.value ?? 0;
+    const out = [];
+    for (let i=0;i<arr.length;i++){
+      const v = arr[i].value;
+      const sv = i===0 ? v : (prev + alpha*(v - prev));
+      prev = sv;
+      out.push({ time: arr[i].time, value: sv });
+    }
+    // финал оставляем как есть
+    if (out.length >= 2) out[out.length-1].value = arr[arr.length-1].value;
+    return out;
+  }
+
+  function setNewSeries(rawSeries){
+    // rawSeries: [[timeMs,value],...]
+    let arr = [];
+    for (const p of (rawSeries || [])){
+      if (!Array.isArray(p) || p.length < 2) continue;
+      const tSec = toSec(p[0]);
+      const v = Number(p[1]);
+      if (tSec == null || !Number.isFinite(v)) continue;
+      arr.push({ time: tSec, value: clamp(v, MIN_Y, MAX_Y) });
+    }
+    if (!arr.length) {
+      const nowS = Math.floor(Date.now()/1000);
+      arr = [{ time: nowS, value: 0 }, { time: nowS+1, value: 0 }];
+    }
+
+    // ограничиваем количество точек (меньше лагов и “лишних волн”)
+    arr = downsample(arr, 220);
+    arr = smoothValues(arr);
+
+    points = arr;
+    baseData = [points[0]];
+    idx = 1;
+    cur = points[0].value;
+
+    try{ area.setData(baseData); }catch{}
+    applySeriesColorByValue(cur);
+    ensureBoundNow(cur, points[0].time);
+    updateValueBadge();
+    placeOrb(points[0].time, cur);
+
+    // ставим камеру в окно вокруг текущего времени
+    try{
+      const from = points[0].time;
+      const to = points[Math.min(points.length-1, 40)].time;
+      chart.timeScale().setVisibleRange({ from, to });
+    }catch{}
+  }
+
+  // ===== 60fps animation with interpolation =====
+  function stopAnim(){
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+
+  function startAnim(){
+    stopAnim();
+    running = true;
+
+    const tick = () => {
+      if (!running) return;
+
+      // текущий серверный time в сек
+      const nowSec = Math.floor(serverNow()/1000);
+
+      // “догоняем” точки, которые уже должны быть добавлены
+      while (idx < points.length && points[idx].time <= nowSec) {
+        baseData.push(points[idx]);
+        try{ area.update(points[idx]); }catch{}
+        idx++;
+      }
+
+      // интерполяция между last и next (если есть)
+      const last = baseData[baseData.length - 1];
+      const next = points[idx] || last;
+
+      let v = last.value;
+      if (next && next.time > last.time) {
+        const p = clamp((nowSec - last.time) / (next.time - last.time), 0, 1);
+        v = last.value + (next.value - last.value) * p;
+      }
+
+      cur = clamp(v, MIN_Y, MAX_Y);
+
+      // обновляем “текущую” точку тем же временем nowSec (одна точка на кадр — минимум нагрузки)
+      try{ area.update({ time: nowSec, value: cur }); }catch{}
+      applySeriesColorByValue(cur);
+      ensureBoundNow(cur, nowSec);
+      updateValueBadge();
+      placeOrb(nowSec, cur);
+
+      // камера за графиком
+      try{
+        const from = Math.max(points[0].time, nowSec - 60);
+        const to = nowSec + 6;
+        chart.timeScale().setVisibleRange({ from, to });
+      }catch{}
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+  }
+
+  // ===== Betting window / state =====
+  let lastState = null;
   let currentRound = null;
   let betMs = 7000;
   let lastPhase = null;
+  let bettingOpen = false;
+  let pos = null;
+  let lastSettledRound = null;
 
-  // ===== Wallet (TonConnect) =====
+  function getBetWindowFromState(s){
+    const now = serverNow();
+    const phase = s?.phase;
+    const phaseEndsAt = Number(s?.phaseEndsAt);
+    if (phase && Number.isFinite(phaseEndsAt)) {
+      const inBet = (phase === "BET");
+      const leftMs = Math.max(0, phaseEndsAt - now);
+      return { inBet, leftMs, betMs: Number(s?.betMs || betMs), phase };
+    }
+    return { inBet:false, leftMs:0, betMs, phase:"PLAY" };
+  }
+
+  function setPosStatus(){
+    $("posStatus").textContent = pos ? `${String(pos.side).toUpperCase()} • ${pos.amount.toFixed(2)} TON` : "—";
+    $("btnCancelBet").classList.toggle("disabled", !(pos && bettingOpen));
+  }
+
+  function updateCountdownAndButtons(state){
+    const s = state || lastState || {};
+    if(!currentRound) return;
+
+    const w = getBetWindowFromState(s);
+    const inBet = !!w.inBet;
+    const leftMs = Number(w.leftMs || 0);
+    const betWindowMs = Number(w.betMs || betMs);
+    const phase = w.phase || s.phase || null;
+
+    scaleCover.classList.toggle("show", inBet);
+
+    // BET -> PLAY: новый раунд должен стартовать с 0%
+    if (lastPhase === "BET" && phase === "PLAY") {
+      // как только раунд начался — запрашиваем новую серию и сразу ставим её
+      // чтобы не было “стоит на месте”
+      bootSeries(true).catch(()=>{});
+    }
+    lastPhase = phase;
+
+    bettingOpen = inBet && !!getWalletRawLS();
+    $("btnLong").classList.toggle("disabled", !bettingOpen);
+    $("btnShort").classList.toggle("disabled", !bettingOpen);
+
+    if (inBet){
+      const secLeft = Math.max(0, Math.ceil(leftMs/1000));
+      cdEl.classList.add("show");
+      cdNumEl.textContent = String(secLeft);
+      cdSubEl.textContent = "BET";
+      setRing(betWindowMs > 0 ? (leftMs / betWindowMs) : 0);
+      setRingColor(secLeft);
+
+      if(!getWalletRawLS()) setHint("Подключи кошелёк, чтобы делать ставки.");
+      else setHint("");
+    } else {
+      cdEl.classList.remove("show");
+      cdSubEl.textContent = "PLAY";
+      setHint("");
+    }
+
+    $("btnCancelBet").classList.toggle("disabled", !(pos && inBet && !!getWalletRawLS()));
+  }
+
+  // ===== Wallet (TonConnect) minimal =====
   let __tonCore = null;
   async function tonCore(){
     if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
@@ -791,7 +1049,6 @@
         .then(() => window.dispatchEvent(new Event("wallet_changed")))
         .catch(() => {});
     }catch(e){
-      console.warn("TonConnect init error:", e);
       dbg("TonConnect init error: " + (e?.message || e));
       window.__tonUI = null;
       window.__wallet = null;
@@ -809,7 +1066,7 @@
   $("actionBind")?.addEventListener("click", async () => {
     try{
       if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
-      alert("TonConnect не загрузился (проверь скрипт).");
+      alert("TonConnect не загрузился.");
     }catch(e){
       alert("Ошибка подключения: " + String(e?.message || e));
     }
@@ -847,9 +1104,7 @@
       const ton = Number(j.balanceTon ?? j.ton ?? 0);
       if (Number.isFinite(ton)) setBalanceTonUI(ton);
       return ton;
-    }catch{
-      return 0;
-    }
+    }catch{ return 0; }
   }
 
   window.addEventListener("wallet_changed", async () => {
@@ -858,7 +1113,7 @@
     updateCountdownAndButtons();
   });
 
-  // ===== Deposit modal hooks (оставил как было, но без лишнего) =====
+  // ===== Deposit modal (оставил минимально) =====
   const depositModal = $("depositModal");
   function openDepositModal(){ depositModal?.classList.add("open"); }
   function closeDepositModal(){ depositModal?.classList.remove("open"); }
@@ -869,420 +1124,9 @@
     $("depositAmount").value = "";
     openDepositModal();
   });
-
   $("depositClose")?.addEventListener("click", closeDepositModal);
   $("depositBack")?.addEventListener("click", closeDepositModal);
   depositModal?.addEventListener("click", (e) => { if(e.target === depositModal) closeDepositModal(); });
-
-  async function doDepositTon(amountTon){
-    const raw = getWalletRawLS();
-    if(!raw) throw new Error("no_wallet");
-    if (!window.__tonUI?.sendTransaction) throw new Error("tonconnect_not_ready");
-
-    const info = await apiGet("/api/state?t=" + Date.now());
-    const to = info?.treasuryAddress;
-    if (!to) throw new Error("no_treasury_address");
-
-    const nonce = String(Date.now()) + ":" + String(Math.floor(Math.random()*1e9));
-    const comment = `deposit:${raw}:${nonce}`;
-
-    const { beginCell } = await tonCore();
-    const cell = beginCell().storeUint(0, 32).storeStringTail(comment).endCell();
-    const payloadBoc = btoa(String.fromCharCode(...cell.toBoc({ idx:false })));
-
-    const tx = {
-      validUntil: Math.floor(Date.now() / 1000) + 300,
-      messages: [{
-        address: to,
-        amount: String(Math.floor(amountTon * 1e9)),
-        payload: payloadBoc
-      }]
-    };
-
-    await window.__tonUI.sendTransaction(tx);
-
-    try{
-      await apiPost("/api/deposit_credit?t=" + Date.now(), { address: raw, amountTon, comment });
-    }catch{}
-  }
-
-  $("depositConfirm")?.addEventListener("click", async () => {
-    try{
-      const v = Number($("depositAmount").value);
-      if(!Number.isFinite(v) || v <= 0) { $("depositHint").textContent = "Введи сумму > 0"; return; }
-      $("depositHint").textContent = "Отправляю транзакцию...";
-      await doDepositTon(v);
-      $("depositHint").textContent = "Готово! Обновляю баланс...";
-      await refreshBalance().catch(()=>{});
-      setTimeout(closeDepositModal, 500);
-    }catch(e){
-      $("depositHint").textContent = "Ошибка пополнения: " + String(e?.message || e);
-    }
-  });
-
-  // ===== Chart =====
-  let chart=null, area=null, bound=null;
-  const endOrb = $("endOrb");
-  const scaleCover = $("scaleCover");
-  const valueBadge = $("valueBadge");
-
-  let t = 0;
-  let data = [];
-  const WINDOW_POINTS = 520;
-
-  const MIN_Y = -100;
-  const MAX_Y = 200;
-
-  let cur = 0;
-  let vel = 0;
-
-  let roundTarget = 0;
-
-  let regime = { until: 0, drift: 0 };
-
-  let camCenter = 0;
-  const CAM_WINDOW = 60;
-  const CAM_EASE = 0.08;
-
-  function applySeriesColorByValue(v){
-    const isGreen = (Number(v) >= 0);
-    const line = isGreen ? "rgba(49,209,124,.95)" : "rgba(255,77,77,.95)";
-    const top  = isGreen ? "rgba(49,209,124,.26)" : "rgba(255,77,77,.22)";
-    try{ area.applyOptions({ lineColor: line, topColor: top, bottomColor: "rgba(0,0,0,0)" }); }catch{}
-  }
-
-  function ensureBoundNow(v){
-    if(!bound) return;
-    camCenter = camCenter + (v - camCenter) * CAM_EASE;
-    const lo = clamp(camCenter - CAM_WINDOW, MIN_Y, MAX_Y);
-    const hi = clamp(camCenter + CAM_WINDOW, MIN_Y, MAX_Y);
-    try{ bound.setData([{ time: t-1, value: lo }, { time: t, value: hi }]); }catch{}
-  }
-
-  function placeOrbAtPoint(pt){
-    try{
-      if(!chart || !area || !endOrb || !pt) return;
-      const x = chart.timeScale().timeToCoordinate(pt.time);
-      const y = area.priceToCoordinate(pt.value);
-      if (x == null || y == null) return;
-      endOrb.style.left = x + "px";
-      endOrb.style.top  = y + "px";
-      endOrb.style.display = "block";
-    }catch{}
-  }
-
-  function updateValueBadge(){
-    const v = Math.round(Number(cur) || 0);
-    valueBadge.textContent = (v > 0 ? "+" : "") + v + "%";
-  }
-
-  function resetForNewRoundPlay(){
-    cur = 0;
-    vel = 0;
-    camCenter = 0;
-
-    t = 0;
-    data = [{ time: 0, value: 0 }];
-
-    try{ area.setData(data); }catch{}
-    applySeriesColorByValue(0);
-    ensureBoundNow(0);
-    placeOrbAtPoint({ time: 0, value: 0 });
-    updateValueBadge();
-
-    try{ chart.timeScale().setVisibleRange({ from: 0, to: 60 }); }catch{}
-  }
-
-  function initChart(){
-    const el = $("chart");
-    if(!el || !window.LightweightCharts?.createChart) return false;
-
-    chart = LightweightCharts.createChart(el, {
-      width: Math.max(320, el.clientWidth || 900),
-      height: 360,
-      layout: { background: { type:"solid", color:"transparent" }, textColor: "rgba(242,239,255,.55)" },
-      grid: { vertLines: { color: "rgba(255,255,255,.04)" }, horzLines: { color: "rgba(255,255,255,.05)" } },
-      rightPriceScale: {
-        visible: true,
-        borderColor: "rgba(255,255,255,.10)",
-        scaleMargins: { top: 0.10, bottom: 0.12 }
-      },
-      timeScale: { borderColor: "rgba(255,255,255,.10)", timeVisible:false, secondsVisible:false },
-      crosshair: { vertLine: { visible:false }, horzLine: { visible:false } },
-      watermark: { visible: false } // убираем watermark
-    });
-
-    const curved =
-      window.LightweightCharts &&
-      window.LightweightCharts.LineType &&
-      window.LightweightCharts.LineType.Curved;
-
-    area = chart.addAreaSeries({
-      lineWidth: 2,
-      lineType: curved ? window.LightweightCharts.LineType.Curved : undefined,
-      lineColor: "rgba(49,209,124,.95)",
-      topColor: "rgba(49,209,124,.26)",
-      bottomColor: "rgba(0,0,0,0)",
-      priceFormat: { type:"custom", formatter: (v) => `${Math.round(Number(v))}%` },
-
-      // ВАЖНО: УБИРАЕМ стандартные лейблы справа (чтобы не было “2 значений”)
-      priceLineVisible: false,
-      lastValueVisible: false
-    });
-
-    bound = chart.addLineSeries({
-      color: "rgba(0,0,0,0)",
-      lineWidth: 1,
-      lastValueVisible: false,
-      priceLineVisible: false
-    });
-
-    resetForNewRoundPlay();
-
-    const ro = new ResizeObserver(() => {
-      try{ chart.resize(Math.max(320, el.clientWidth || 900), 360); }catch{}
-    });
-    ro.observe(el);
-
-    return true;
-  }
-
-  // ===== ДВИЖЕНИЕ (медленно, но с рывками) =====
-  const ADD_POINT_EVERY_MS = 180; // медленнее по X
-  let lastAddTs = 0;
-
-  function pickRegime(nowMs){
-    const dur = 2200 + Math.random()*4200; // 2.2..6.4 сек
-    const r = Math.random();
-
-    let drift = 0;
-    if (r < 0.40) drift =  0.010 + Math.random()*0.022;
-    else if (r < 0.80) drift = -(0.010 + Math.random()*0.022);
-    else drift = (Math.random()-0.5) * 0.018;
-
-    regime = { until: nowMs + dur, drift };
-  }
-
-  function stepTrade(nowMs, progress01){
-    if (nowMs > regime.until) pickRegime(nowMs);
-
-    const noise = (Math.random()-0.5) * 0.045;
-
-    // редкие сильные рывки
-    let impulse = 0;
-    if (Math.random() < 0.0045) {
-      const dir = (Math.random()<0.5 ? -1 : 1);
-      impulse = dir * (1.2 + Math.random()*3.6);
-    }
-
-    const pullStrength = 0.001 + progress01*progress01*0.020;
-    const pull = (roundTarget - cur) * pullStrength;
-
-    const accel = regime.drift + noise + impulse + pull;
-
-    vel = vel * 0.988 + accel * 0.18; // медленнее по “цене”
-    cur = cur + vel;
-    cur = clamp(cur, MIN_Y, MAX_Y);
-  }
-
-  function ensureWindow(){
-    if (data.length > WINDOW_POINTS) data = data.slice(-WINDOW_POINTS);
-  }
-
-  function addNewPoint(){
-    t++;
-    const pt = { time: t, value: Number(cur.toFixed(4)) };
-    data.push(pt);
-    ensureWindow();
-
-    try{ area.update(pt); }catch{ try{ area.setData(data); }catch{} }
-
-    applySeriesColorByValue(cur);
-    ensureBoundNow(cur);
-    placeOrbAtPoint(pt);
-    updateValueBadge();
-
-    try{
-      const from = Math.max(0, t - (WINDOW_POINTS - 30));
-      chart.timeScale().setVisibleRange({ from, to: t + 6 });
-    }catch{}
-  }
-
-  function updateLastPoint(){
-    const pt = { time: t, value: Number(cur.toFixed(4)) };
-    try{ area.update(pt); }catch{}
-    applySeriesColorByValue(cur);
-    ensureBoundNow(cur);
-    placeOrbAtPoint(pt);
-    updateValueBadge();
-  }
-
-  let rafId = 0;
-  function startLoop60(){
-    stopLoop60();
-
-    const start = performance.now();
-    lastAddTs = start;
-    pickRegime(start);
-
-    if (!data.length) resetForNewRoundPlay();
-    addNewPoint();
-
-    const tick = (now) => {
-      let progress01 = 0;
-      try{
-        const ns = serverNow();
-        const startAt = Number(currentRound?.startAt);
-        const endAt   = Number(currentRound?.endAt);
-        if (Number.isFinite(startAt) && Number.isFinite(endAt) && endAt > startAt) {
-          progress01 = clamp((ns - startAt) / (endAt - startAt), 0, 1);
-        }
-      }catch{}
-
-      stepTrade(now, progress01);
-      updateLastPoint();
-
-      if (now - lastAddTs >= ADD_POINT_EVERY_MS) {
-        addNewPoint();
-        lastAddTs = now;
-      }
-
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-  }
-
-  function stopLoop60(){
-    if (rafId){ cancelAnimationFrame(rafId); rafId = 0; }
-  }
-
-  function applyServerTargetFromSeries(series){
-    const arr = Array.isArray(series) ? series : [];
-    if(!arr.length) return;
-
-    let lastVal = null;
-    const last = arr[arr.length - 1];
-    if (Array.isArray(last) && last.length >= 2) lastVal = Number(last[1]);
-    else if (typeof last === "object" && last) lastVal = Number(last.value);
-
-    if (!Number.isFinite(lastVal)) return;
-    roundTarget = clamp(lastVal, MIN_Y, MAX_Y);
-  }
-
-  // ===== BET window =====
-  function getBetWindowFromState(s){
-    const round = s?.round || null;
-    if (!round) return null;
-
-    const now = serverNow();
-    const phase = s?.phase;
-    const phaseEndsAt = Number(s?.phaseEndsAt);
-
-    if (phase && Number.isFinite(phaseEndsAt)) {
-      const inBet = (phase === "BET");
-      const leftMs = Math.max(0, phaseEndsAt - now);
-      return { inBet, leftMs, betMs: Number(s?.betMs || betMs), phase };
-    }
-
-    const startAt = Number(round.startAt);
-    const endAt = Number(round.endAt);
-    if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) return null;
-
-    const inBet = now >= startAt && now < endAt;
-    const leftMs = Math.max(0, endAt - now);
-    return { inBet, leftMs, betMs: Number(s?.betMs || betMs), phase: inBet ? "BET" : "PLAY" };
-  }
-
-  let bettingOpen = false;
-  let pos = null;
-  let lastSettledRound = null;
-
-  function setPosStatus(){
-    $("posStatus").textContent = pos ? `${String(pos.side).toUpperCase()} • ${pos.amount.toFixed(2)} TON` : "—";
-    $("btnCancelBet").classList.toggle("disabled", !(pos && bettingOpen));
-  }
-
-  function updateCountdownAndButtons(state){
-    const s = state || lastState || {};
-    if(!currentRound) return;
-
-    const w = getBetWindowFromState(s);
-    const inBet = !!w?.inBet;
-    const leftMs = Number(w?.leftMs || 0);
-    const betWindowMs = Number(w?.betMs || betMs);
-    const phase = w?.phase || s?.phase || null;
-
-    // В BET закрываем цифры шкалы оверлеем (100% работает)
-    scaleCover.classList.toggle("show", inBet);
-
-    // BET->PLAY: фиксируем прошлый результат в историю + новый раунд с 0%
-    if (lastPhase === "BET" && phase === "PLAY") {
-      // считаем, что итог прошлого раунда = roundTarget (он держит финал)
-      pushLocalHistory(roundTarget);
-      renderHistory(lastState?.history || []);
-      resetForNewRoundPlay();
-      pickRegime(performance.now());
-      addNewPoint();
-    }
-    lastPhase = phase;
-
-    bettingOpen = inBet && !!getWalletRawLS();
-    $("btnLong").classList.toggle("disabled", !bettingOpen);
-    $("btnShort").classList.toggle("disabled", !bettingOpen);
-
-    if (inBet){
-      const secLeft = Math.max(0, Math.ceil(leftMs/1000));
-      cdEl.classList.add("show");
-      cdNumEl.textContent = String(secLeft);
-      cdSubEl.textContent = "BET";
-
-      setRing(betWindowMs > 0 ? (leftMs / betWindowMs) : 0);
-      setRingColor(secLeft);
-
-      if(!getWalletRawLS()) setHint("Подключи кошелёк, чтобы делать ставки.");
-      else setHint("");
-    } else {
-      cdEl.classList.remove("show");
-      cdSubEl.textContent = "PLAY";
-      setHint("");
-    }
-
-    $("btnCancelBet").classList.toggle("disabled", !(pos && inBet && !!getWalletRawLS()));
-  }
-
-  // ===== STATE / SERIES =====
-  async function loadState(){
-    const s = await apiGet("/api/state?t=" + Date.now());
-    lastState = s;
-
-    dbg("state: " + JSON.stringify({ phase:s?.phase, phaseEndsAt:s?.phaseEndsAt, roundId:s?.round?.roundId }, null, 0));
-
-    timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
-    currentRound = s.round;
-    betMs = s.betMs || betMs;
-
-    renderHistory(s.history || []);
-
-    // если бек вдруг отдаёт прошлый результат — тоже подхватим
-    const possiblePct =
-      s?.lastResultPct ?? s?.prevResultPct ?? s?.resultPct ??
-      s?.round?.lastResultPct ?? s?.round?.prevResultPct ?? s?.round?.resultPct;
-
-    if (Number.isFinite(Number(possiblePct))) pushLocalHistory(Number(possiblePct));
-
-    updateCountdownAndButtons(s);
-  }
-
-  async function loadSeries(){
-    try{
-      const x = await apiGet("/api/series?t=" + Date.now());
-      dbg("series len: " + String(x?.series?.length ?? 0));
-      applyServerTargetFromSeries(x.series);
-    }catch(e){
-      dbg("series error: " + (e?.message || e));
-    }
-  }
 
   // ===== Bets =====
   async function place(side){
@@ -1342,7 +1186,6 @@
 
     try{
       const r = await apiPost("/api/bet_settle?t=" + Date.now(), { address: raw, roundId: pos.roundId });
-
       if (r?.status === "pending" || r?.status === "already_settled") return;
 
       lastSettledRound = pos.roundId;
@@ -1352,10 +1195,10 @@
       const sPct = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
       const profit = Number(r.profitTon || 0);
 
-      if (Number.isFinite(pct)) pushLocalHistory(pct);
-      renderHistory(lastState?.history || []);
-
       showToast(profit >= 0 ? "win" : "lose", (profit >= 0 ? "WIN " : "LOSE ") + sPct);
+
+      // после settle обновляем state чтобы история пришла с сервера
+      await loadState().catch(()=>{});
 
       pos = null;
       setPosStatus();
@@ -1363,10 +1206,47 @@
     }catch(e){}
   }
 
-  // ===== Boot =====
-  setPosStatus();
-  setHint("");
+  // ===== State / Series boot =====
+  async function loadState(){
+    const s = await apiGet("/api/state?t=" + Date.now());
+    lastState = s;
 
+    // offset времени (чтобы синхра не плыла)
+    timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
+
+    currentRound = s.round || null;
+    betMs = s.betMs || betMs;
+
+    // история только сервер
+    renderHistory(s.history || []);
+
+    dbg("state: " + JSON.stringify({ phase:s?.phase, roundId:s?.round?.roundId, hist:(s?.history?.length||0) }));
+    updateCountdownAndButtons(s);
+  }
+
+  async function bootSeries(force){
+    // при загрузке/перезапуске раунда: ставим новую серию и запускаем анимацию
+    try{
+      loading.classList.add("show");
+
+      const x = await apiGet("/api/series?t=" + Date.now());
+      dbg("series: " + JSON.stringify({ roundId:x?.roundId, len:(x?.series?.length||0), endPct:x?.endPct }));
+
+      // если пришло пусто — не ломаем
+      const rawSeries = x?.series || [];
+      setNewSeries(rawSeries);
+
+      // стартуем анимацию только после данных
+      startAnim();
+
+    }catch(e){
+      dbg("bootSeries error: " + (e?.message || e));
+    } finally {
+      loading.classList.remove("show");
+    }
+  }
+
+  // ===== Boot =====
   (async function boot(){
     try{
       if(!initChart()){
@@ -1374,24 +1254,27 @@
         return;
       }
 
+      setPosStatus();
+      setHint("");
+
       await syncWalletUI().catch(()=>{});
       await refreshBalance().catch(()=>{});
 
       await loadState().catch(e => setSafeError("STATE error: " + (e?.message || e)));
-      await loadSeries().catch(()=>{});
+      await bootSeries(false);
 
-      startLoop60();
+      // частоту запросов снизил — меньше лагов
+      setInterval(() => loadState().catch(()=>{}), 1200);
+      setInterval(() => updateCountdownAndButtons(), 160);
+      setInterval(() => trySettleIfNeeded(), 800);
+      setInterval(() => refreshBalance().catch(()=>{}), 8000);
 
-      setInterval(() => loadState().catch(()=>{}), 900);
-      setInterval(() => loadSeries().catch(()=>{}), 900);
+      // обновлять серию не каждые 900мс (это лагало), а раз в 4 сек:
+      setInterval(() => {
+        // если вдруг раунд сменился — перезагрузим серию
+        bootSeries(false).catch(()=>{});
+      }, 4000);
 
-      // update без state теперь НЕ ломает BET, потому что берём lastState
-      setInterval(() => updateCountdownAndButtons(), 140);
-
-      setInterval(() => trySettleIfNeeded(), 650);
-      setInterval(() => refreshBalance().catch(()=>{}), 6500);
-
-      updateCountdownAndButtons();
     }catch(e){
       setSafeError("Boot error: " + String(e?.message || e));
     }
