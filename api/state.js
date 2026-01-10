@@ -20,6 +20,31 @@ function roundStartAt(roundId) {
   return roundId * ROUND_MS;
 }
 
+// минимальная финализация (берём сохранённый endPct или ставим 0 если нет)
+// ВАЖНО: точный endPct у нас пишет series.js, а state.js лишь гарантирует history не пустая.
+async function finalizeFallback(roundId) {
+  if (roundId < 0) return;
+
+  const endAt = roundStartAt(roundId) + ROUND_MS;
+  if (Date.now() < endAt) return;
+
+  const endKey = `round:endPct:${roundId}`;
+  let endPct = await redis.get(endKey);
+
+  const hist = await redis.lrange(HISTORY_KEY, 0, 0);
+  const last = hist?.[0] ? JSON.parse(hist[0]) : null;
+  if (last?.roundId === roundId) return;
+
+  if (endPct == null) {
+    endPct = "0";
+    await redis.set(endKey, endPct);
+  }
+
+  const item = JSON.stringify({ roundId, pct: Number(endPct), ts: endAt });
+  await redis.lpush(HISTORY_KEY, item);
+  await redis.ltrim(HISTORY_KEY, 0, 49);
+}
+
 export default async function handler(req, res) {
   try {
     res.setHeader("Cache-Control", "no-store");
@@ -27,6 +52,10 @@ export default async function handler(req, res) {
 
     const now = Date.now();
     const roundId = roundIdByNow(now);
+
+    // гарантируем что прошлые раунды попали в историю
+    await finalizeFallback(roundId - 1);
+    await finalizeFallback(roundId - 2);
 
     const startAt = roundStartAt(roundId);
     const endAt = startAt + BET_MS;
@@ -37,7 +66,6 @@ export default async function handler(req, res) {
       .map((s) => { try { return JSON.parse(s); } catch { return null; } })
       .filter(Boolean);
 
-    // для пополнения
     const treasuryAddress = process.env.TREASURY_TON_ADDRESS || "";
 
     return res.status(200).json({
