@@ -102,6 +102,19 @@
     /* убрать любые ссылки/вотермарки */
     #chart a, #chart [class*="watermark"], #chart [id*="watermark"]{display:none!important; opacity:0!important; pointer-events:none!important;}
 
+    .loading{
+      position:absolute; inset:0;
+      z-index: 60;
+      display:none;
+      align-items:center; justify-content:center;
+      background: radial-gradient(900px 520px at 50% 0%, rgba(124,77,255,.18), rgba(0,0,0,.25));
+      backdrop-filter: blur(6px);
+      font-weight:1100;
+      letter-spacing:.2px;
+      color: rgba(242,239,255,.92);
+    }
+    .loading.show{display:flex;}
+
     .endOrb{
       position:absolute;
       width:12px;height:12px;border-radius:999px;
@@ -391,20 +404,6 @@
       color: rgba(242,239,255,.90);
     }
     .dbgPanel.show{display:block;}
-
-    /* Loading overlay */
-    .loading{
-      position:absolute; inset:0;
-      z-index: 60;
-      display:none;
-      align-items:center; justify-content:center;
-      background: radial-gradient(900px 520px at 50% 0%, rgba(124,77,255,.18), rgba(0,0,0,.25));
-      backdrop-filter: blur(6px);
-      font-weight:1100;
-      letter-spacing:.2px;
-      color: rgba(242,239,255,.92);
-    }
-    .loading.show{display:flex;}
   </style>
 </head>
 
@@ -672,7 +671,6 @@
 
     for (const it of arr.slice(0, 10)) {
       const pct = Number(it?.pct ?? it?.endPct ?? it?.resultPct ?? it?.value ?? 0);
-
       const wrap = document.createElement("div");
       wrap.className = "histItem";
 
@@ -703,8 +701,8 @@
   // данные анимации
   let points = [];          // [{time, value}] time in seconds
   let baseData = [];        // уже добавленные точки
-  let idx = 0;              // текущий индекс следующей точки
-  let cur = 0;              // текущее значение (интерполированное)
+  let idx = 0;              // индекс следующей точки
+  let cur = 0;              // текущее значение
   let running = false;
   let rafId = 0;
 
@@ -755,7 +753,7 @@
         borderColor: "rgba(255,255,255,.10)",
         scaleMargins: { top: 0.10, bottom: 0.12 }
       },
-      timeScale: { borderColor: "rgba(255,255,255,.10)", timeVisible:false, secondsVisible:false },
+      timeScale: { borderColor: "rgba(255,255,255,.10)", timeVisible:false, secondsVisible:true },
       crosshair: { vertLine: { visible:false }, horzLine: { visible:false } },
       watermark: { visible: false }
     });
@@ -791,12 +789,11 @@
     return true;
   }
 
-  // ===== series processing: меньше “мелкой дрожи”, больше трендов =====
+  // ===== series processing (ms/sec -> sec, downsample, smooth) =====
   function toSec(x){
-    // backend может вернуть ms или sec — приводим к sec
     const n = Number(x);
     if (!Number.isFinite(n)) return null;
-    return n > 3e10 ? Math.floor(n / 1000) : Math.floor(n); // ms -> sec
+    return n > 3e10 ? Math.floor(n / 1000) : Math.floor(n);
   }
 
   function downsample(arr, maxPoints){
@@ -809,8 +806,7 @@
   }
 
   function smoothValues(arr){
-    // лёгкое сглаживание, чтобы были “реки/горы”, а не “дрожь”
-    const alpha = 0.18; // меньше = сильнее сглаживание
+    const alpha = 0.16; // меньше дрожи
     let prev = arr[0]?.value ?? 0;
     const out = [];
     for (let i=0;i<arr.length;i++){
@@ -819,13 +815,11 @@
       prev = sv;
       out.push({ time: arr[i].time, value: sv });
     }
-    // финал оставляем как есть
     if (out.length >= 2) out[out.length-1].value = arr[arr.length-1].value;
     return out;
   }
 
   function setNewSeries(rawSeries){
-    // rawSeries: [[timeMs,value],...]
     let arr = [];
     for (const p of (rawSeries || [])){
       if (!Array.isArray(p) || p.length < 2) continue;
@@ -839,8 +833,7 @@
       arr = [{ time: nowS, value: 0 }, { time: nowS+1, value: 0 }];
     }
 
-    // ограничиваем количество точек (меньше лагов и “лишних волн”)
-    arr = downsample(arr, 220);
+    arr = downsample(arr, 240);
     arr = smoothValues(arr);
 
     points = arr;
@@ -854,7 +847,6 @@
     updateValueBadge();
     placeOrb(points[0].time, cur);
 
-    // ставим камеру в окно вокруг текущего времени
     try{
       const from = points[0].time;
       const to = points[Math.min(points.length-1, 40)].time;
@@ -862,7 +854,7 @@
     }catch{}
   }
 
-  // ===== 60fps animation with interpolation =====
+  // ===== 60fps animation =====
   function stopAnim(){
     running = false;
     if (rafId) cancelAnimationFrame(rafId);
@@ -876,17 +868,14 @@
     const tick = () => {
       if (!running) return;
 
-      // текущий серверный time в сек
       const nowSec = Math.floor(serverNow()/1000);
 
-      // “догоняем” точки, которые уже должны быть добавлены
       while (idx < points.length && points[idx].time <= nowSec) {
         baseData.push(points[idx]);
         try{ area.update(points[idx]); }catch{}
         idx++;
       }
 
-      // интерполяция между last и next (если есть)
       const last = baseData[baseData.length - 1];
       const next = points[idx] || last;
 
@@ -895,17 +884,14 @@
         const p = clamp((nowSec - last.time) / (next.time - last.time), 0, 1);
         v = last.value + (next.value - last.value) * p;
       }
-
       cur = clamp(v, MIN_Y, MAX_Y);
 
-      // обновляем “текущую” точку тем же временем nowSec (одна точка на кадр — минимум нагрузки)
       try{ area.update({ time: nowSec, value: cur }); }catch{}
       applySeriesColorByValue(cur);
       ensureBoundNow(cur, nowSec);
       updateValueBadge();
       placeOrb(nowSec, cur);
 
-      // камера за графиком
       try{
         const from = Math.max(points[0].time, nowSec - 60);
         const to = nowSec + 6;
@@ -956,11 +942,9 @@
 
     scaleCover.classList.toggle("show", inBet);
 
-    // BET -> PLAY: новый раунд должен стартовать с 0%
+    // BET -> PLAY: перезагружаем серию нового раунда и стартуем с 0 визуально (серия сама с нуля)
     if (lastPhase === "BET" && phase === "PLAY") {
-      // как только раунд начался — запрашиваем новую серию и сразу ставим её
-      // чтобы не было “стоит на месте”
-      bootSeries(true).catch(()=>{});
+      bootSeriesForCurrentRound("phase_change").catch(()=>{});
     }
     lastPhase = phase;
 
@@ -987,7 +971,7 @@
     $("btnCancelBet").classList.toggle("disabled", !(pos && inBet && !!getWalletRawLS()));
   }
 
-  // ===== Wallet (TonConnect) minimal =====
+  // ===== Wallet (TonConnect) =====
   let __tonCore = null;
   async function tonCore(){
     if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
@@ -1113,7 +1097,7 @@
     updateCountdownAndButtons();
   });
 
-  // ===== Deposit modal (оставил минимально) =====
+  // ===== Deposit modal (минимально) =====
   const depositModal = $("depositModal");
   function openDepositModal(){ depositModal?.classList.add("open"); }
   function closeDepositModal(){ depositModal?.classList.remove("open"); }
@@ -1197,7 +1181,7 @@
 
       showToast(profit >= 0 ? "win" : "lose", (profit >= 0 ? "WIN " : "LOSE ") + sPct);
 
-      // после settle обновляем state чтобы история пришла с сервера
+      // подтянуть серверную историю сразу
       await loadState().catch(()=>{});
 
       pos = null;
@@ -1206,39 +1190,48 @@
     }catch(e){}
   }
 
-  // ===== State / Series boot =====
+  // ===== State / Series sync =====
   async function loadState(){
     const s = await apiGet("/api/state?t=" + Date.now());
     lastState = s;
 
-    // offset времени (чтобы синхра не плыла)
     timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
-
     currentRound = s.round || null;
     betMs = s.betMs || betMs;
 
-    // история только сервер
     renderHistory(s.history || []);
 
     dbg("state: " + JSON.stringify({ phase:s?.phase, roundId:s?.round?.roundId, hist:(s?.history?.length||0) }));
     updateCountdownAndButtons(s);
+
+    return s;
   }
 
-  async function bootSeries(force){
-    // при загрузке/перезапуске раунда: ставим новую серию и запускаем анимацию
+  let lastLoadedRoundId = null;
+
+  // ВАЖНО: серия грузится ТОЛЬКО по roundId из state, иначе рассинхрон
+  async function bootSeriesForCurrentRound(reason){
     try{
       loading.classList.add("show");
 
-      const x = await apiGet("/api/series?t=" + Date.now());
-      dbg("series: " + JSON.stringify({ roundId:x?.roundId, len:(x?.series?.length||0), endPct:x?.endPct }));
+      const rid = Number(currentRound?.roundId);
+      if (!Number.isFinite(rid)) throw new Error("no_roundId_in_state");
 
-      // если пришло пусто — не ломаем
-      const rawSeries = x?.series || [];
-      setNewSeries(rawSeries);
+      // не перезагружать одно и то же каждые 4 сек
+      if (lastLoadedRoundId === rid && reason !== "force") {
+        loading.classList.remove("show");
+        return;
+      }
 
-      // стартуем анимацию только после данных
+      const x = await apiGet("/api/series?roundId=" + encodeURIComponent(String(rid)) + "&t=" + Date.now());
+      dbg("series: " + JSON.stringify({ want: rid, roundId:x?.roundId, len:(x?.series?.length||0), endPct:x?.endPct }));
+
+      // защита: если бек отдал не тот roundId — НЕ принимаем
+      if (Number(x?.roundId) !== rid) throw new Error("series_roundId_mismatch want=" + rid + " got=" + x?.roundId);
+
+      setNewSeries(x?.series || []);
       startAnim();
-
+      lastLoadedRoundId = rid;
     }catch(e){
       dbg("bootSeries error: " + (e?.message || e));
     } finally {
@@ -1261,19 +1254,24 @@
       await refreshBalance().catch(()=>{});
 
       await loadState().catch(e => setSafeError("STATE error: " + (e?.message || e)));
-      await bootSeries(false);
+      await bootSeriesForCurrentRound("force"); // сразу грузим серию текущего раунда
 
-      // частоту запросов снизил — меньше лагов
+      // опросы не душим (чтоб не лагало)
       setInterval(() => loadState().catch(()=>{}), 1200);
       setInterval(() => updateCountdownAndButtons(), 160);
       setInterval(() => trySettleIfNeeded(), 800);
       setInterval(() => refreshBalance().catch(()=>{}), 8000);
 
-      // обновлять серию не каждые 900мс (это лагало), а раз в 4 сек:
-      setInterval(() => {
-        // если вдруг раунд сменился — перезагрузим серию
-        bootSeries(false).catch(()=>{});
-      }, 4000);
+      // проверяем смену раунда раз в 2.5 сек (и только тогда грузим серию заново)
+      setInterval(async () => {
+        try{
+          const s = await loadState();
+          const rid = Number(s?.round?.roundId);
+          if (Number.isFinite(rid) && rid !== lastLoadedRoundId) {
+            await bootSeriesForCurrentRound("force");
+          }
+        }catch{}
+      }, 2500);
 
     }catch(e){
       setSafeError("Boot error: " + String(e?.message || e));
