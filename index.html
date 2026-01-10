@@ -361,8 +361,9 @@
     .row2 .sheetAction{flex:1 1 0;justify-content:center;}
 
     a[href*="tradingview"], a[href*="TradingView"]{display:none!important;}
-    #pillChances{display:none!important;}
-  </style>
+  
+  #pillChances{display:none!important;}
+</style>
 </head>
 
 <body>
@@ -578,7 +579,7 @@
         uiPreferences: { theme: "DARK" },
         // важно для TWA/Telegram:
         actionsConfiguration: {
-          twaReturnUrl: location.href
+          twaReturnUrl: (window.__TWA_RETURN_URL || location.href)
         }
       });
 
@@ -731,47 +732,11 @@
   });
 
   // ===== History + Chances UI =====
-
-// ===== Local history fallback (если Redis/Upstash не настроен) =====
-  const LS_HISTORY_KEY = "tg_game_history_v1";
-  function getLocalHistory(){
-    try{
-      const raw = localStorage.getItem(LS_HISTORY_KEY);
-      const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
-    }catch{ return []; }
-  }
-  function saveLocalHistory(arr){
-    try{ localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(arr.slice(0, 50))); }catch{}
-  }
-  function addLocalHistoryItem(item){
-    const arr = getLocalHistory();
-    // уникальность по roundId
-    const filtered = arr.filter(x => x && x.roundId !== item.roundId);
-    filtered.unshift(item);
-    saveLocalHistory(filtered);
-    return filtered;
-  }
-  function mergeHistory(serverArr){
-    const s = Array.isArray(serverArr) ? serverArr : [];
-    const l = getLocalHistory();
-    const map = new Map();
-    for (const it of [...s, ...l]){
-      if(!it) continue;
-      const rid = Number(it.roundId);
-      if(!Number.isFinite(rid)) continue;
-      if(!map.has(rid)) map.set(rid, { roundId: rid, pct: Number(it.pct||0), ts: Number(it.ts||0) });
-    }
-    // сортировка: новые сверху
-    return [...map.values()].sort((a,b)=> (b.roundId - a.roundId));
-  }
-
-    function renderHistory(items){
+  function renderHistory(items){
     const row = $("histRow");
     if(!row) return;
     row.innerHTML = "";
-    const arr = mergeHistory(items);
-    saveLocalHistory(arr);
+    const arr = Array.isArray(items) ? items : [];
     for (const it of arr.slice(0, 10)) {
       const pct = Number(it.pct || 0);
       const wrap = document.createElement("div");
@@ -857,8 +822,8 @@
   let tickIndex = 0;
   const WINDOW_POINTS = 520;
 
-  const MIN_Y = -110;
-  const MAX_Y = 210;
+  const MIN_Y = -40;
+  const MAX_Y = 80;
 
   let cur = 0;
   let vel = 0;
@@ -867,7 +832,7 @@
   let wavePhase = 0;
 
   let camCenter = 0;
-  const CAM_WINDOW = 140;
+  const CAM_WINDOW = 55;
   const CAM_EASE = 0.08;
 
   function applySeriesColorByValue(v){
@@ -968,75 +933,34 @@
   }
 
   // плавно и медленнее (1x)
-  function stepPhysics(dtMs=16){
-    // dt-нормализация: те же ощущения на разных FPS
-    const s = dtMs / 16;
-
-    // пружина к целевому значению (target)
-    const k = 0.014;               // чуть мягче, чтобы движение было медленнее
-    const dampBase = 0.955;        // больше = меньше затухание за 16мс
-
-    const a = (target - cur) * k * s;
-
-    // экспоненциальное затухание
-    const damp = Math.pow(dampBase, s);
+  function stepPhysics(){
+    const k = 0.006;
+    const damp = 0.945;
+    const a = (target - cur) * k;
 
     vel = (vel + a + shock) * damp;
-    shock *= Math.pow(0.90, s);
+    shock *= 0.88;
 
-    // микроволны: медленнее, но “живее”
-    wavePhase += 0.055 * s;
-    const microWave =
-      Math.sin(wavePhase) * 0.32 +
-      Math.sin(wavePhase * 0.47) * 0.15 +
-      Math.sin(wavePhase * 0.17) * 0.22;
+    wavePhase += 0.050;
+    const microWave = Math.sin(wavePhase) * 0.12 + Math.sin(wavePhase * 0.43) * 0.06;
 
     cur = cur + vel + microWave;
     cur = clamp(cur, MIN_Y, MAX_Y);
   }
 
   let raf = 0;
-  // скорость отрисовки (чем больше, тем медленнее)
-  const SAMPLE_MS = 120;           // как часто добавляем новую точку на график
-  const PHYSICS_STEP_MS = 16;      // базовый шаг физики
-  const JERK_RATE = 0.35;          // средняя частота резких рывков (раз в ~3с)
-  const JERK_SHOCK = 9.5;          // сила рывка
-
-  let lastTs = 0;
-  let accMs = 0;
-
-  function maybeJerk(dt){
-    // вероятность рывка зависит от dt, чтобы одинаково работало на разных FPS
-    const p = JERK_RATE * (dt/1000);
-    if (Math.random() < p){
-      const dir = (Math.random() < 0.5 ? -1 : 1);
-      shock += dir * (3 + Math.random() * JERK_SHOCK);
-      vel   += dir * (0.8 + Math.random() * 2.2);
-    }
-  }
+  const PUSH_MS = 120; // slower drawing (8-9 points/sec)
+  let lastPushTs = 0;
 
   function loop(ts){
-    if(!lastTs) lastTs = ts;
-    let dt = ts - lastTs;
-    lastTs = ts;
-    if (dt > 120) dt = 120; // защита от вкладок/лагов
-
-    // шаг физики может быть "мелким", но точки рисуем реже
-    accMs += dt;
-    // несколько мелких шагов физики, чтобы движение было плавное и контролируемое
-    while(accMs >= PHYSICS_STEP_MS){
-      stepPhysics(PHYSICS_STEP_MS);
-      maybeJerk(PHYSICS_STEP_MS);
-      accMs -= PHYSICS_STEP_MS;
-    }
-
-    // рисуем точку не на каждом кадре, а раз в SAMPLE_MS
-    loop._drawAcc = (loop._drawAcc || 0) + dt;
-    if(loop._drawAcc >= SAMPLE_MS){
+    ts = (typeof ts === 'number') ? ts : performance.now();
+    stepPhysics();
+    // throttle chart updates to reduce lag + make movement slower
+    if(!lastPushTs) lastPushTs = ts;
+    if(ts - lastPushTs >= PUSH_MS){
       pushPoint(cur);
-      loop._drawAcc = 0;
+      lastPushTs = ts;
     }
-
     raf = requestAnimationFrame(loop);
   }
 
@@ -1060,7 +984,7 @@
     target = clamp(serverValue, MIN_Y, MAX_Y);
 
     const d = target - cur;
-    if (Math.abs(d) > 18) shock += clamp(d * 0.06, -2.8, 2.8);
+    if (Math.abs(d) > 12) shock += clamp(d * 0.03, -1.2, 1.2);
   }
 
   async function loadState(){
@@ -1073,16 +997,6 @@
     renderChances(chances);
 
     renderHistory(s.history || []);
-
-    // если бек не сохраняет историю, добавим последний завершённый раунд в локальную историю
-    if (s.lastFinished && Number.isFinite(Number(s.lastFinished.roundId))) {
-      const rid = Number(s.lastFinished.roundId);
-      const pct = Number(s.lastFinished.pct || 0);
-      const existing = getLocalHistory().some(x => Number(x?.roundId) === rid);
-      if (!existing && rid >= 0) {
-        addLocalHistoryItem({ roundId: rid, pct, ts: Date.now() });
-      }
-    }
 
     if (lastRoundIdSeen == null) lastRoundIdSeen = currentRound?.roundId;
     if (currentRound && lastRoundIdSeen !== currentRound.roundId){
@@ -1222,10 +1136,6 @@
       const profit = Number(r.profitTon || 0);
 
       showToast(profit >= 0 ? "win" : "lose", (profit >= 0 ? "WIN " : "LOSE ") + sPct);
-
-      // сохраняем результат раунда локально (если бек не хранит историю)
-      addLocalHistoryItem({ roundId: pos.roundId, pct: pct, ts: Date.now() });
-      renderHistory([]); // перерисуем из merged history
 
       pos = null;
       setPosStatus();
