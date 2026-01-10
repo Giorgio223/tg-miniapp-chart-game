@@ -9,19 +9,22 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
 
-  <!-- Lightweight Charts v4 -->
-  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <!-- Lightweight Charts (основной) -->
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <!-- Lightweight Charts (резервный CDN, если unpkg блокируется) -->
   <script>
     (function(){
       function loadFallback(){
+        // jsdelivr fallback
         var s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js";
+        s.src = "https://cdn.jsdelivr.net/npm/lightweight-charts/dist/lightweight-charts.standalone.production.js";
         s.async = true;
         document.head.appendChild(s);
       }
+      // если unpkg не загрузился за 1500мс — пробуем fallback
       setTimeout(function(){
         if (!window.LightweightCharts) loadFallback();
-      }, 1200);
+      }, 1500);
     })();
   </script>
 
@@ -31,6 +34,7 @@
       --text:#f2efff;
       --muted:rgba(242,239,255,.65);
       --green:#31d17c;
+      --yellow:#ffcc33;
       --red:#ff4d4d;
       --purple:#7c4dff;
       --orange:#ff9d2e;
@@ -112,10 +116,11 @@
 
     #chart{
       height:360px;
+      position:relative;
       background: radial-gradient(900px 520px at 50% 0%, rgba(124,77,255,.30), rgba(124,77,255,.08) 45%, rgba(0,0,0,.10) 70%);
-      position: relative;
     }
 
+    /* glowing end orb (last point) */
     .endOrb{
       position:absolute;
       width:12px;height:12px;border-radius:999px;
@@ -146,7 +151,6 @@
         radial-gradient(circle at 70% 65%, rgba(255,255,255,.10), transparent 52%),
         radial-gradient(circle at 55% 25%, rgba(255,255,255,.08), transparent 48%);
       opacity:.65;
-      filter: blur(0.2px);
       animation: orbSpray 1.8s linear infinite;
     }
     @keyframes orbPulse{
@@ -159,6 +163,7 @@
       100%{ transform: rotate(360deg); opacity:.55; }
     }
 
+    /* overlay for chart errors */
     .chartError{
       position:absolute; inset:0;
       display:flex; align-items:center; justify-content:center;
@@ -181,6 +186,7 @@
     }
     .chartErrorBox small{display:block; margin-top:8px; font-weight:800; opacity:.75}
 
+    /* Countdown circle overlay */
     .countdown{
       position:absolute;
       left:50%;
@@ -213,6 +219,7 @@
       text-transform: uppercase;
     }
 
+    /* History overlay bottom-left */
     .historyWrap{
       position:absolute;
       left:14px;
@@ -265,6 +272,7 @@
     .tri.down::after{ top:-11px; border-top: 9px solid rgba(255,255,255,.92); }
     .pctText{ min-width: 42px; text-align:right; }
 
+    /* Result toast */
     .toast{
       position:absolute;
       right:14px;
@@ -285,6 +293,7 @@
     .toast.win{border-color: rgba(49,209,124,.35);}
     .toast.lose{border-color: rgba(255,77,77,.35);}
 
+    /* Bet panel */
     .betWrap{padding:12px;}
     .amountGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}
     .chip{
@@ -317,6 +326,7 @@
     }
     .hint{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.35;min-height:34px;}
 
+    /* BONUS sheet */
     .bonusOverlay{
       position: fixed; inset: 0; background: rgba(0,0,0,.62);
       display:none;align-items:flex-end;justify-content:center;padding:14px;
@@ -337,6 +347,7 @@
     .bonusHead .t{font-weight:1100;letter-spacing:.3px;text-transform:uppercase;font-size:12px;color:var(--text);}
     .bonusBody{padding:12px;color:var(--muted);line-height:1.45;font-size:13px;}
 
+    /* TON modal */
     .modalOverlay{
       position:fixed; inset:0;
       background: rgba(0,0,0,.55);
@@ -417,11 +428,11 @@
     </div>
 
     <div class="grid">
+      <!-- Chart card -->
       <div class="card" id="chartCard">
-        <div id="chart">
-          <div class="endOrb" id="endOrb"></div>
-        </div>
+        <div id="chart"><div class="endOrb" id="endOrb"></div></div>
 
+        <!-- Countdown overlay -->
         <div class="countdown" id="countdown">
           <svg width="112" height="112" viewBox="0 0 112 112">
             <defs>
@@ -442,13 +453,16 @@
           <div class="cdSub">BET</div>
         </div>
 
+        <!-- History overlay -->
         <div class="historyWrap">
           <div class="histRow" id="histRow"></div>
         </div>
 
+        <!-- Result toast -->
         <div class="toast" id="toast"></div>
       </div>
 
+      <!-- Bet card -->
       <div class="card">
         <div class="betWrap">
           <div class="amountGrid" id="chips">
@@ -483,16 +497,20 @@
     </div>
   </div>
 
+  <!-- BONUS -->
   <div class="bonusOverlay" id="bonusOverlay">
     <div class="bonusSheet">
       <div class="bonusHead">
         <div class="t">BONUS</div>
         <button class="btn ghost" id="btnBonusClose">Закрыть</button>
       </div>
-      <div class="bonusBody">Тут будет бонусная система. Функцию добавим позже.</div>
+      <div class="bonusBody">
+        Тут будет бонусная система. Функцию добавим позже.
+      </div>
     </div>
   </div>
 
+  <!-- TON SHEET -->
   <div class="modalOverlay" id="tonModal">
     <div class="sheet">
       <div class="sheetHeader">
@@ -521,6 +539,7 @@
     </div>
   </div>
 
+  <!-- DEPOSIT INPUT -->
   <div class="modalOverlay" id="depositModal">
     <div class="sheet">
       <div class="sheetHeader">
@@ -548,18 +567,21 @@
   function showChartError(message){
     const card = $("chartCard");
     if(!card) return;
+    // удаляем предыдущую
     const old = card.querySelector(".chartError");
     if(old) old.remove();
+
     const overlay = document.createElement("div");
     overlay.className = "chartError";
     overlay.innerHTML = `
       <div class="chartErrorBox">
-        Ошибка: ${String(message || "unknown")}
-        <small>Проверь: /api/state /api/series + env UPSTASH</small>
+        Ошибка графика: ${String(message || "unknown")}
+        <small>Открой DevTools → Network и проверь загрузку lightweight-charts (unpkg/jsdelivr) и ответы /api/state /api/series.</small>
       </div>
     `;
     card.appendChild(overlay);
   }
+
   function clearChartError(){
     const card = $("chartCard");
     if(!card) return;
@@ -567,43 +589,14 @@
     if(old) old.remove();
   }
 
-  function waitForLW(cb){
-    let tries = 0;
-    const t = setInterval(() => {
-      if (window.LightweightCharts && window.LightweightCharts.createChart){
-        clearInterval(t);
-        cb();
-        return;
-      }
-      tries++;
-      if (tries > 40){
-        clearInterval(t);
-        showChartError("LightweightCharts не загрузился (CDN блок/сеть).");
-      }
-    }, 150);
-  }
-
+  // Ждём полной загрузки окна (важно для размеров контейнера)
   window.addEventListener("load", () => {
     const tg = window.Telegram?.WebApp;
     try { tg?.ready?.(); tg?.expand?.(); } catch {}
 
+    // ✅ Абсолютный API base
     const API_BASE = window.API_BASE || location.origin;
     const apiUrl = (path) => new URL(path, API_BASE).toString();
-
-    // ---------------------------
-    // API helpers + backoff
-    // ---------------------------
-    const backoff = {
-      state: 0,  // 0..6
-      series: 0,
-      balance: 0,
-    };
-    function bump(name){ backoff[name] = Math.min(6, (backoff[name] || 0) + 1); }
-    function calm(name){ backoff[name] = Math.max(0, (backoff[name] || 0) - 1); }
-    function delayMs(name, base){
-      // base * (1.6^backoff)
-      return Math.floor(base * Math.pow(1.6, backoff[name] || 0));
-    }
 
     async function apiGet(path){
       const r = await fetch(apiUrl(path), { cache: "no-store" });
@@ -611,10 +604,12 @@
       let j = null;
       try{ j = JSON.parse(txt); }catch{ j = { raw: txt }; }
       if(!r.ok){
-        throw new Error((j && j.error ? j.error : "http") + " " + r.status + " " + path);
+        console.error("API GET FAIL:", path, r.status, j);
+        throw new Error(path + " " + r.status);
       }
       return j;
     }
+
     async function apiPost(path, body){
       const r = await fetch(apiUrl(path), {
         method:"POST",
@@ -625,151 +620,30 @@
       let j = null;
       try{ j = JSON.parse(txt); }catch{ j = { raw: txt }; }
       if(!r.ok){
-        throw new Error((j && j.error ? j.error : "http") + " " + r.status + " " + path);
+        console.error("API POST FAIL:", path, r.status, j);
+        throw new Error(path + " " + r.status);
       }
       return j;
     }
 
-    // ---------------------------
-    // CHART
-    // ---------------------------
+    // =========================
+    // CHART (плавные волны + камера за кружком + кружок на последней точке)
+    // =========================
     let chart = null;
     let area = null;
     let bound = null;
+    let didSetAnyData = false;
 
-    const endOrb = $("endOrb");
-    const CHART_H = 360;
-
+    // диапазон процентов (как на сервере)
     const MIN_Y = -100;
     const MAX_Y = 200;
 
-    function applySeriesColorByValue(v){
-      const isGreen = (Number(v) >= 0);
-      const line = isGreen ? "rgba(49,209,124,.95)" : "rgba(255,77,77,.95)";
-      const top  = isGreen ? "rgba(49,209,124,.26)" : "rgba(255,77,77,.22)";
-      const bot  = "rgba(0,0,0,0)";
-      try{ area.applyOptions({ lineColor: line, topColor: top, bottomColor: bot }); }catch{}
-    }
+    // "камера" следует за кружком, но не прыгает (инерция)
+    let camCenter = 0;
+    const CAM_WINDOW = 85;      // видимый "радиус" вокруг кружка
+    const CAM_EASE = 0.08;      // чем меньше — тем плавнее камера
 
-    function addLevelLine(v){
-      return area.createPriceLine({
-        price: v,
-        color: "rgba(255,255,255,.10)",
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dotted,
-        axisLabelVisible: false,
-        title: ""
-      });
-    }
-
-    function normalizeTsToSec(ts){
-      const n = Number(ts);
-      if(!Number.isFinite(n)) return Math.floor(Date.now()/1000);
-      // backend отдаёт ms
-      if(n > 2e10) return Math.floor(n/1000);
-      return Math.floor(n);
-    }
-
-    function toChartData(seriesArr){
-      const arr = Array.isArray(seriesArr) ? seriesArr : [];
-      return arr
-        .map(([ts, val]) => ({ time: normalizeTsToSec(ts), value: Number(val) }))
-        .filter(p => Number.isFinite(p.time) && Number.isFinite(p.value))
-        .sort((a,b) => a.time - b.time);
-    }
-
-    function initChart(){
-      if(!window.LightweightCharts?.createChart){
-        showChartError("LightweightCharts не загрузился");
-        return false;
-      }
-      const el = $("chart");
-      if(!el){ showChartError("Не найден #chart"); return false; }
-
-      clearChartError();
-
-      const W = Math.max(320, el.clientWidth || 900);
-      chart = LightweightCharts.createChart(el, {
-        width: W,
-        height: CHART_H,
-        layout: { background: { type:"solid", color:"transparent" }, textColor: "rgba(242,239,255,.70)" },
-        grid: { vertLines: { color: "rgba(255,255,255,.05)" }, horzLines: { color: "rgba(255,255,255,.05)" } },
-        rightPriceScale: {
-          visible: true,
-          borderColor: "rgba(255,255,255,.10)",
-          textColor: "rgba(242,239,255,.55)",
-          scaleMargins: { top: 0.10, bottom: 0.12 },
-        },
-        timeScale: {
-          visible: true,
-          borderColor: "rgba(255,255,255,.10)",
-          timeVisible: true,
-          secondsVisible: true,
-        },
-        crosshair: { vertLine: { color: "rgba(124,77,255,.35)" }, horzLine: { color: "rgba(124,77,255,.25)" } }
-      });
-
-      area = chart.addAreaSeries({
-        lineWidth: 2,
-        lineColor: "rgba(49,209,124,.95)",
-        topColor: "rgba(49,209,124,.26)",
-        bottomColor: "rgba(0,0,0,0)",
-        priceFormat: { type:"custom", formatter: (v) => `${Math.round(Number(v))}%` }
-      });
-
-      bound = chart.addLineSeries({
-        color: "rgba(0,0,0,0)",
-        lineWidth: 1,
-        lastValueVisible: false,
-        priceLineVisible: false,
-      });
-
-      const now = Math.floor(Date.now()/1000);
-      bound.setData([{ time: now-2, value: MIN_Y }, { time: now-1, value: MAX_Y }]);
-
-      addLevelLine(200);
-      addLevelLine(150);
-      addLevelLine(100);
-      addLevelLine(50);
-      addLevelLine(0);
-      addLevelLine(-50);
-      addLevelLine(-100);
-
-      area.setData([
-        { time: now-6, value: 0 },
-        { time: now-4, value: 3 },
-        { time: now-2, value: -2 },
-        { time: now, value: 1 }
-      ]);
-      applySeriesColorByValue(1);
-
-      const ro = new ResizeObserver(() => {
-        try{
-          const w = Math.max(320, el.clientWidth || 900);
-          chart.resize(w, CHART_H);
-          scheduleOrbRecalc();
-        }catch{}
-      });
-      ro.observe(el);
-
-      setTimeout(() => {
-        try{ chart.timeScale().fitContent(); }catch{}
-      }, 50);
-
-      return true;
-    }
-
-    function setScalesVisible(visible){
-      if(!chart) return;
-      try{
-        chart.applyOptions({
-          rightPriceScale: { visible: !!visible },
-          timeScale: { visible: !!visible }
-        });
-      }catch{}
-    }
-
-    // ORB
+    const endOrb = $("endOrb");
     let lastOrbPoint = null;
     let orbRAF = 0;
 
@@ -790,22 +664,152 @@
       });
     }
 
-    // Smooth update logic (без setData каждый тик)
-    let cached = [];
-    let lastFitDone = false;
-    let anim = { active:false, from:null, to:null, t0:0, dur:260 };
-
-    function ensureBoundNow(){
-      if(!bound) return;
-      const now = Math.floor(Date.now()/1000);
-      bound.setData([{ time: now-2, value: MIN_Y }, { time: now-1, value: MAX_Y }]);
+    function normalizeTsToSec(ts){
+      const n = Number(ts);
+      if(!Number.isFinite(n)) return Math.floor(Date.now()/1000);
+      if(n > 2e12) return Math.floor(n/1000); // ms
+      if(n > 2e10) return Math.floor(n/1000); // ms (на всякий)
+      return Math.floor(n); // sec
     }
 
-    function startTween(lastPoint, targetPoint){
-      if(!lastPoint || !targetPoint) return;
+    function toChartData(seriesArr){
+      const arr = Array.isArray(seriesArr) ? seriesArr : [];
+      return arr
+        .map(([ts, pct]) => ({ time: normalizeTsToSec(ts), value: Number(pct) }))
+        .filter(p => Number.isFinite(p.time) && Number.isFinite(p.value))
+        .sort((a,b) => a.time - b.time);
+    }
+
+    function applySeriesColorByValue(v){
+      const isGreen = (Number(v) >= 0);
+      const line = isGreen ? "rgba(49,209,124,.95)" : "rgba(255,77,77,.95)";
+      const top  = isGreen ? "rgba(49,209,124,.28)" : "rgba(255,77,77,.24)";
+      const bot  = "rgba(0,0,0,0)";
+      try{ area.applyOptions({ lineColor: line, topColor: top, bottomColor: bot }); }catch{}
+    }
+
+    function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+
+    function ensureBoundNow(targetValue){
+      if(!bound) return;
+      const now = Math.floor(Date.now()/1000);
+
+      const target = Number.isFinite(targetValue) ? targetValue : 0;
+      camCenter = camCenter + (target - camCenter) * CAM_EASE;
+
+      const lo = clamp(camCenter - CAM_WINDOW, MIN_Y, MAX_Y);
+      const hi = clamp(camCenter + CAM_WINDOW, MIN_Y, MAX_Y);
+
+      bound.setData([{ time: now-2, value: lo }, { time: now-1, value: hi }]);
+    }
+
+    function initChartOrError(){
+      if(!window.LightweightCharts?.createChart){
+        showChartError("LightweightCharts не загрузился (CDN заблокирован или ошибка сети).");
+        return false;
+      }
+      const el = $("chart");
+      if(!el){ showChartError("Не найден элемент #chart"); return false; }
+
+      // не трогаем endOrb
+      const orb = endOrb;
+      el.innerHTML = "";
+      if (orb) el.appendChild(orb);
+
+      clearChartError();
+
+      const W = Math.max(320, el.clientWidth || 900);
+      const H = 360;
+
+      chart = LightweightCharts.createChart(el, {
+        width: W,
+        height: H,
+        layout: { background: { type:"solid", color:"transparent" }, textColor: "rgba(242,239,255,.75)" },
+        grid: { vertLines: { color: "rgba(255,255,255,.06)" }, horzLines: { color: "rgba(255,255,255,.06)" } },
+        rightPriceScale: {
+          borderColor: "rgba(255,255,255,.12)",
+          textColor: "rgba(242,239,255,.70)",
+          scaleMargins: { top: 0.10, bottom: 0.12 }
+        },
+        timeScale: { borderColor: "rgba(255,255,255,.12)", timeVisible: true, secondsVisible: true },
+        crosshair: { vertLine: { color: "rgba(124,77,255,.45)" }, horzLine: { color: "rgba(124,77,255,.35)" } }
+      });
+
+      area = chart.addAreaSeries({
+        lineWidth: 2,
+        lineColor: "rgba(49,209,124,.95)",
+        topColor: "rgba(49,209,124,.28)",
+        bottomColor: "rgba(49,209,124,0.00)",
+        priceFormat: { type:"custom", formatter: (v) => `${Number(v).toFixed(0)}%` }
+      });
+
+      // bound-series для динамического диапазона (камера)
+      bound = chart.addLineSeries({
+        color: "rgba(0,0,0,0)",
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+
+      // уровни
+      const mkPL = (v,t) => area.createPriceLine({
+        price: v,
+        color: "rgba(255,255,255,.14)",
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: t
+      });
+      mkPL(200,"200%");
+      mkPL(150,"150%");
+      mkPL(100,"100%");
+      mkPL(50,"50%");
+      mkPL(0,"0%");
+      mkPL(-50,"-50%");
+      mkPL(-100,"-100%");
+
+      // fallback — график точно виден
+      const now = Math.floor(Date.now()/1000);
+      const seed = [
+        { time: now-6, value: 0 },
+        { time: now-4, value: 8 },
+        { time: now-2, value: -6 },
+        { time: now, value: 4 }
+      ];
+      area.setData(seed);
+      didSetAnyData = true;
+
+      lastOrbPoint = seed[seed.length-1];
+      applySeriesColorByValue(lastOrbPoint.value);
+      ensureBoundNow(lastOrbPoint.value);
+      chart.timeScale().fitContent();
+      scheduleOrbRecalc();
+
+      // resize observer
+      const ro = new ResizeObserver(() => {
+        try{
+          const w = Math.max(320, el.clientWidth || 900);
+          chart.resize(w, H);
+          scheduleOrbRecalc();
+        }catch{}
+      });
+      ro.observe(el);
+
+      return true;
+    }
+
+    // ----- ПЛАВНОЕ ПРИМЕНЕНИЕ ДАННЫХ -----
+    let cached = [];
+    let lastFitDone = false;
+
+    // tween последней точки, чтобы даже при 1 точке/сек движение было плавным
+    const anim = { active:false, from:null, to:null, t0:0, dur:520 };
+
+    function startTween(fromPt, toPt){
+      if(!fromPt || !toPt || !area) return;
       anim.active = true;
-      anim.from = { ...lastPoint };
-      anim.to = { ...targetPoint };
+      anim.from = { ...fromPt };
+      anim.to = { ...toPt };
       anim.t0 = performance.now();
       tickTween();
     }
@@ -814,31 +818,33 @@
       if(!anim.active || !area) return;
       const t = performance.now();
       const p = Math.min(1, (t - anim.t0) / anim.dur);
-      const v = anim.from.value + (anim.to.value - anim.from.value) * (p * (2 - p)); // easeOutQuad
+      // easeOutCubic
+      const k = 1 - Math.pow(1 - p, 3);
+      const v = anim.from.value + (anim.to.value - anim.from.value) * k;
+
       area.update({ time: anim.to.time, value: v });
       applySeriesColorByValue(v);
 
       lastOrbPoint = { time: anim.to.time, value: v };
+      ensureBoundNow(v);
       scheduleOrbRecalc();
 
-      if(p < 1){
-        requestAnimationFrame(tickTween);
-      } else {
-        anim.active = false;
-      }
+      if(p < 1) requestAnimationFrame(tickTween);
+      else anim.active = false;
     }
 
     function applySeriesPoints(points){
       if(!chart || !area || !Array.isArray(points) || points.length === 0) return;
 
-      ensureBoundNow();
+      const incoming = points.slice(-900);
 
       if(cached.length === 0){
-        cached = points.slice(-600);
+        cached = incoming;
         area.setData(cached);
         const last = cached[cached.length-1];
         applySeriesColorByValue(last.value);
         lastOrbPoint = last;
+        ensureBoundNow(last.value);
         scheduleOrbRecalc();
         if(!lastFitDone){
           try{ chart.timeScale().fitContent(); }catch{}
@@ -848,36 +854,37 @@
       }
 
       const lastDrawn = cached[cached.length-1];
-      const lastIncoming = points[points.length-1];
-
+      // новые точки
       const newOnes = [];
-      for (const p of points){
+      for (const p of incoming){
         if (p.time > lastDrawn.time) newOnes.push(p);
       }
 
-      if(newOnes.length > 1){
+      if(newOnes.length){
+        // добавляем все, кроме последней, без анимации
         for (let i=0;i<newOnes.length-1;i++){
-          const p = newOnes[i];
-          area.update(p);
-          cached.push(p);
+          area.update(newOnes[i]);
+          cached.push(newOnes[i]);
+        }
+        // последнюю — анимируем
+        const tgt = newOnes[newOnes.length-1];
+        cached.push(tgt);
+        startTween(lastDrawn, tgt);
+      } else {
+        // если время совпадает, а значение изменилось — тоже анимируем
+        const lastIncoming = incoming[incoming.length-1];
+        if(lastIncoming.time === lastDrawn.time && Number(lastIncoming.value) !== Number(lastDrawn.value)){
+          cached[cached.length-1] = lastIncoming;
+          startTween(lastDrawn, lastIncoming);
         }
       }
 
-      const tgt = newOnes.length ? newOnes[newOnes.length-1] : null;
-
-      if(tgt){
-        const from = cached[cached.length-1];
-        cached.push(tgt);
-        startTween(from, tgt);
-      } else if(lastIncoming.time === lastDrawn.time && Number(lastIncoming.value) !== Number(lastDrawn.value)){
-        cached[cached.length-1] = lastIncoming;
-        startTween(lastDrawn, lastIncoming);
-      }
-
-      if(cached.length > 800) cached = cached.slice(-650);
+      if(cached.length > 1200) cached = cached.slice(-900);
     }
 
-    // Countdown
+    // =========================
+    // Countdown (без изменений, но надёжно)
+    // =========================
     const cdEl = $("countdown");
     const cdNumEl = $("cdNum");
     const cdRingEl = $("cdRing");
@@ -888,6 +895,7 @@
       cdRingEl.setAttribute("stroke-dasharray", String(CIRC));
       cdRingEl.setAttribute("stroke-dashoffset", "0");
     }
+
     function setRing(progress01){
       if(!cdRingEl) return;
       const off = CIRC * (1 - Math.max(0, Math.min(1, progress01)));
@@ -938,7 +946,9 @@
       }, 1500);
     }
 
-    // BONUS
+    // =========================
+    // UI: BONUS
+    // =========================
     const bonusOverlay = $("bonusOverlay");
     if ($("btnBonus")) $("btnBonus").onclick = () => bonusOverlay.style.display = "flex";
     if ($("btnBonusClose")) $("btnBonusClose").onclick = () => bonusOverlay.style.display = "none";
@@ -946,7 +956,9 @@
       if(e.target === bonusOverlay) bonusOverlay.style.display = "none";
     });
 
-    // Chips
+    // =========================
+    // UI: Chips
+    // =========================
     let selectedAmt = 0.10;
     if ($("chips")) {
       $("chips").addEventListener("click", (e) => {
@@ -959,7 +971,9 @@
       });
     }
 
-    // Wallet
+    // =========================
+    // Wallet/balance/deposit (оставлено, но deposit_resume ОТКЛЮЧЕН)
+    // =========================
     let __tonCore = null;
     async function tonCore(){
       if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
@@ -1036,26 +1050,57 @@
       }
     })();
 
+    async function bindWalletOnServer(){
+      const raw = getWalletRawLS();
+      const initData = tg?.initData || "";
+      if (!raw || !initData) return;
+      try{
+        await fetch(apiUrl(`/api/bind_wallet?t=${Date.now()}`), {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ initData, walletAddress: raw })
+        });
+      }catch(e){
+        console.warn("bind_wallet failed:", e);
+      }
+    }
+
     function setBalanceTonUI(v){
       const ton = Number(v) || 0;
       if ($("balTon")) $("balTon").textContent = ton.toFixed(2);
     }
 
-    // ✅ безопасное обновление баланса (не ломаем UI при 500)
     async function refreshBalance(){
       const raw = getWalletRawLS();
       if (!raw){ setBalanceTonUI(0); return 0; }
+      const r = await fetch(apiUrl(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
+      const j = await r.json().catch(()=>({}));
+      const ton = Number(j.balanceTon ?? j.ton ?? (j.nano ? (Number(j.nano)/1e9) : 0) ?? 0);
+      if (Number.isFinite(ton)) setBalanceTonUI(ton);
+      return ton;
+    }
 
-      try{
-        const data = await apiGet(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`);
-        calm("balance");
-        const ton = Number(data.balanceTon ?? data.ton ?? 0);
-        if (Number.isFinite(ton)) setBalanceTonUI(ton);
-        return ton;
-      }catch(e){
-        bump("balance");
-        // не спамим алертами, просто молча держим старое значение
-        return Number($("balTon")?.textContent || "0") || 0;
+    // ✅ ОТКЛЮЧЕНО — у тебя это красное. Включишь после фикса сервера.
+    async function resumeDepositsSilently(){ return; }
+
+    async function confirmDepositTry(intentId, addressRaw){
+      const url = apiUrl(`/api/confirm_deposit?intentId=${encodeURIComponent(intentId)}&address=${encodeURIComponent(addressRaw)}&t=${Date.now()}`);
+      const r = await fetch(url, { cache:"no-store" });
+      const j = await r.json().catch(()=>({}));
+      return { ok: r.ok, json: j };
+    }
+
+    async function waitAndCreditSilent(intentId){
+      const raw = getWalletRawLS();
+      if (!raw) return;
+      for (let i=0;i<80;i++){
+        const { ok, json } = await confirmDepositTry(intentId, raw);
+        if (ok && json?.status === "credited"){
+          await refreshBalance();
+          alert(`Баланс пополнен: +${json.creditedTon} TON`);
+          return;
+        }
+        await new Promise(r => setTimeout(r, 1500));
       }
     }
 
@@ -1089,6 +1134,8 @@
 
     window.addEventListener("wallet_changed", async () => {
       await syncWalletUI();
+      await bindWalletOnServer();
+      await resumeDepositsSilently();
       await refreshBalance();
     });
 
@@ -1122,18 +1169,45 @@
     };
 
     if ($("depositConfirm")) $("depositConfirm").onclick = async () => {
-      alert("Депозит подключишь позже (серверная часть).");
+      const raw = getWalletRawLS();
+      if (!raw){ alert("Сначала привяжи кошелёк."); return; }
+
+      const amountTon = Number($("depositAmount")?.value || 0);
+      if (!amountTon || amountTon <= 0){ alert("Введите сумму TON"); return; }
+      if (amountTon < 0.1){ alert("Минимум 0.1 TON"); return; }
+      if (!window.__tonUI?.sendTransaction){ alert("TonConnect UI не готов."); return; }
+
+      try{
+        const intent = await apiPost("/api/deposit_intent?t=" + Date.now(), { amountTon, address: raw });
+
+        await window.__tonUI.sendTransaction({
+          validUntil: Math.floor(Date.now()/1000) + 300,
+          messages:[{
+            address: intent.toAddressFriendly || intent.toAddressRaw || intent.toAddress,
+            amount: String(intent.amountNano),
+            payload: await commentToBocBase64(intent.comment || "")
+          }]
+        });
+
+        closeDepositModal();
+        alert("Транзакция отправлена, ждём подтверждения.\n\nНе обновляйте страницу и не закрывайте окно.");
+        setTimeout(() => waitAndCreditSilent(intent.intentId), 8000);
+      }catch(e){
+        alert("Транзакция отменена или ошибка кошелька.");
+      }
     };
 
-    // GAME STATE
+    // =========================
+    // Bet UI + settle
+    // =========================
     let currentRound = null;
+    let lastRoundIdSeen = null;
     let betMs = 7000;
     let roundMs = 19000;
     let timeOffsetMs = 0;
 
     function serverNow(){ return Date.now() + timeOffsetMs; }
 
-    // bet ui
     let pos = null;
     function setHint(text){ if ($("hint")) $("hint").textContent = text || ""; }
     function setPosStatus(){
@@ -1147,14 +1221,7 @@
       const b1 = $("btnLong");
       const b2 = $("btnShort");
       if(!b1 || !b2) return;
-
-      // ✅ без кошелька ставки запрещаем (иначе guest будет играть без баланса)
-      // Если хочешь разрешить guest-ставки — убери проверку walletOk ниже.
-      const walletOk = !!getWalletRawLS();
-
-      const ok = !!on && walletOk;
-
-      if (ok){
+      if (on){
         b1.classList.remove("disabled");
         b2.classList.remove("disabled");
         bettingOpen = true;
@@ -1163,10 +1230,6 @@
         b2.classList.add("disabled");
         bettingOpen = false;
       }
-
-      if(on && !walletOk){
-        setHint("Привяжи кошелёк, чтобы делать ставки.");
-      }
     }
 
     async function place(side){
@@ -1174,7 +1237,8 @@
 
       const raw = getWalletRawLS();
       if(!raw){
-        setHint("Сначала привяжи кошелёк.");
+        openTonModal();
+        alert("Сначала привяжи кошелёк.");
         return;
       }
 
@@ -1185,10 +1249,11 @@
           roundId: currentRound?.roundId,
           address: raw
         });
+
         pos = { side, amount: selectedAmt, roundId: currentRound.roundId };
         setPosStatus();
         setHint("Ставка принята");
-        await refreshBalance().catch(()=>{});
+        await refreshBalance();
       }catch(e){
         setHint("Ошибка ставки");
       }
@@ -1204,6 +1269,7 @@
       const nowS = serverNow();
       const finishAt = currentRound.nextAt;
       if (nowS < finishAt) return;
+
       if (lastSettledRound === pos.roundId) return;
 
       const raw = getWalletRawLS();
@@ -1218,6 +1284,7 @@
         if (r?.status === "pending") return;
 
         lastSettledRound = pos.roundId;
+        await refreshBalance();
 
         const pct = Number(r.pct);
         const sPct = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
@@ -1229,13 +1296,9 @@
         pos = null;
         setPosStatus();
         setHint("");
-
-        await refreshBalance().catch(()=>{});
       }catch(e){}
     }
 
-    // scales during bet
-    let prevScaleMode = null;
     function updateBetCountdown(){
       if(!currentRound || !cdEl || !cdNumEl) return;
 
@@ -1243,9 +1306,7 @@
       const startAt = currentRound.startAt;
       const endAt = currentRound.endAt;
 
-      const inBet = (nowS >= startAt && nowS < endAt);
-
-      if (inBet){
+      if (nowS >= startAt && nowS < endAt){
         const leftMs = endAt - nowS;
         const secLeft = Math.max(0, Math.ceil(leftMs/1000));
 
@@ -1257,96 +1318,92 @@
         setRingColor(secLeft);
 
         setButtonsEnabled(true);
-
-        if(prevScaleMode !== "hide"){
-          setScalesVisible(false);
-          prevScaleMode = "hide";
-        }
       } else {
         cdEl.classList.remove("show");
         setButtonsEnabled(false);
-
-        if(prevScaleMode !== "show"){
-          setScalesVisible(true);
-          prevScaleMode = "show";
-        }
       }
     }
 
     async function loadState(){
-      try{
-        const data = await apiGet("/api/state?t=" + Date.now());
-        calm("state");
-        timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
-        currentRound = data.round;
-        betMs = data.betMs || 7000;
-        roundMs = data.roundMs || 19000;
-        renderHistory(data.history || []);
-        return true;
-      }catch(e){
-        bump("state");
-        return false;
+      const data = await apiGet("/api/state?t=" + Date.now());
+      timeOffsetMs = (data.serverNow || Date.now()) - Date.now();
+      currentRound = data.round;
+      betMs = data.betMs || 7000;
+      roundMs = data.roundMs || 19000;
+      renderHistory(data.history || []);
+
+      // ✅ если начался новый раунд — визуально стартуем с 0%
+      if (lastRoundIdSeen == null) lastRoundIdSeen = currentRound?.roundId;
+      if (currentRound && lastRoundIdSeen !== currentRound.roundId){
+        lastRoundIdSeen = currentRound.roundId;
+
+        // сброс визуального кэша (чтобы не было "склейки" прошлого и нового)
+        cached = [];
+        lastFitDone = false;
+        camCenter = 0;
+
+        const t = Math.floor((data.serverNow || Date.now()) / 1000);
+        try{
+          area.setData([{ time: t, value: 0 }]);
+          applySeriesColorByValue(0);
+          lastOrbPoint = { time: t, value: 0 };
+          ensureBoundNow(0);
+          chart.timeScale().fitContent();
+          scheduleOrbRecalc();
+        }catch{}
       }
     }
 
     async function loadSeries(){
-      try{
-        const data = await apiGet("/api/series?t=" + Date.now());
-        calm("series");
-        const points = toChartData(data.series);
-        if(points.length){
-          applySeriesPoints(points);
-          clearChartError();
-        }
-        return true;
-      }catch(e){
-        bump("series");
-        showChartError("API /api/series недоступен или вернул ошибку.");
-        return false;
-      }
+      if(!chart || !area) return;
+      const data = await apiGet("/api/series?t=" + Date.now());
+      const points = toChartData(data.series);
+
+      // если API пустой — оставляем fallback
+      if(!points.length) return;
+
+      applySeriesPoints(points);
+      didSetAnyData = true;
+      clearChartError();
     }
 
-    // BOOT
+    // ===== BOOT (самое важное) =====
+    const ok = initChartOrError();
+
     setPosStatus();
     setHint("");
     setButtonsEnabled(false);
 
-    waitForLW(() => {
-      const ok = initChart();
-      if(!ok) return;
-
-      (async function boot(){
+    (async function boot(){
+      try{
+        if(ok){
+          await loadState().catch(e => console.warn("state err", e));
+          await loadSeries().catch(e => console.warn("series err", e));
+        }
         await syncWalletUI().catch(()=>{});
-        await loadState();
-        await loadSeries();
         await refreshBalance().catch(()=>{});
-      })();
+      }catch(e){
+        console.error("BOOT ERROR:", e);
+      }
+    })();
 
-      // ✅ УМНЫЕ циклы вместо setInterval долбёжки:
-      // state: базово 900ms, при ошибках растёт
-      // series: базово 260ms, при ошибках растёт
-      // balance: базово 6500ms, при ошибках растёт
-      (function loopState(){
-        loadState().finally(() => {
-          setTimeout(loopState, delayMs("state", 900));
-        });
-      })();
+    // Периодические обновления
+    setInterval(() => { if(ok) loadState().catch(e => console.warn("state err", e)); }, 800);
+    setInterval(() => { if(ok) loadSeries().catch(e => console.warn("series err", e)); }, 320);
+    setInterval(() => updateBetCountdown(), 120);
+    setInterval(() => trySettleIfNeeded(), 600);
+    setInterval(() => refreshBalance().catch(()=>{}), 6500);
 
-      (function loopSeries(){
-        loadSeries().finally(() => {
-          setTimeout(loopSeries, delayMs("series", 260));
-        });
-      })();
-
-      (function loopBalance(){
-        refreshBalance().finally(() => {
-          setTimeout(loopBalance, delayMs("balance", 6500));
-        });
-      })();
-
-      setInterval(() => updateBetCountdown(), 120);
-      setInterval(() => trySettleIfNeeded(), 500);
-    });
+    // Если график не создался из-за CDN — попробуем ещё раз через 2 секунды
+    if(!ok){
+      setTimeout(() => {
+        const ok2 = initChartOrError();
+        if(ok2){
+          loadState().catch(()=>{});
+          loadSeries().catch(()=>{});
+        }
+      }, 2200);
+    }
   });
 })();
 </script>
