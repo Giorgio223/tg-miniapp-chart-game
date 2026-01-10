@@ -1,13 +1,20 @@
 const { Redis } = require("@upstash/redis");
 
-// Vercel runtime
 module.exports.config = { runtime: "nodejs" };
 
 const BET_MS = 7000;
 const PLAY_MS = 12000;
 const ROUND_MS = BET_MS + PLAY_MS;
 
-const HISTORY_KEY = "round:history";
+const HISTORY_KEY = "round:history"; // list of json strings latest first
+const HISTORY_MAX = 50;
+
+function getRedis() {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) throw new Error("Upstash env missing: UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN");
+  return new Redis({ url, token });
+}
 
 function roundIdByNow(nowMs) {
   return Math.floor(nowMs / ROUND_MS);
@@ -15,77 +22,112 @@ function roundIdByNow(nowMs) {
 function roundStartAt(roundId) {
   return roundId * ROUND_MS;
 }
-
-// Upstash (если env нет — не падаем 500, а возвращаем ok с пустой историей)
-function getRedisSafe() {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-  return new Redis({ url, token });
+function roundEndAt(roundId) {
+  return roundStartAt(roundId) + ROUND_MS;
+}
+function phaseByNow(nowMs) {
+  const rid = roundIdByNow(nowMs);
+  const start = roundStartAt(rid);
+  const t = nowMs - start;
+  const phase = (t < BET_MS) ? "BET" : "PLAY";
+  const phaseEndsAt = start + ((phase === "BET") ? BET_MS : ROUND_MS);
+  return { rid, start, phase, phaseEndsAt };
 }
 
-// детерминированный RNG (чтобы распределение было одинаковым для всех)
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// распределение результата (endPct)
+function pickEndPctByRoundId(roundId) {
+  // детерминированный псевдорандом
+  let x = (roundId * 1103515245 + 12345) >>> 0;
+  function rnd() {
+    x = (x * 1664525 + 1013904223) >>> 0;
+    return x / 4294967296;
+  }
 
-// ✅ РАСПРЕДЕЛЕНИЕ (как ты написал)
-// LONG: 0..50 = 40%, 50..100 = 5%, 100..150 = 3%, 150..200 = 2%  (итого 50%)
-// SHORT: 0..-100 = 50%
-function pickEndPctForRound(roundId) {
-  const rng = mulberry32(roundId * 1000003 + 1337);
-  const r = rng();
+  // 50% SHORT: 0..-100
+  // 50% LONG: 0..50 (40%), 50..100 (5%), 100..150 (3%), 150..200 (2%)
+  const r = rnd();
 
-  // SHORT (50%)
   if (r < 0.50) {
-    return -Math.round(rng() * 100); // 0..-100
+    // SHORT
+    const u = rnd();
+    const val = -(u * 100); // 0..-100
+    return Number(val.toFixed(4));
   }
 
-  // LONG (50%) с внутренними весами 0.40/0.05/0.03/0.02
-  const x = (r - 0.50) / 0.50; // 0..1
-  if (x < 0.80) { // 40% / 50%
-    return Math.round(rng() * 50); // 0..50
-  } else if (x < 0.90) { // 5% / 50%
-    return 50 + Math.round(rng() * 50); // 50..100
-  } else if (x < 0.96) { // 3% / 50%
-    return 100 + Math.round(rng() * 50); // 100..150
-  } else { // 2% / 50%
-    return 150 + Math.round(rng() * 50); // 150..200
+  // LONG
+  const r2 = (r - 0.50) / 0.50; // 0..1 inside LONG block
+  const u = rnd();
+
+  if (r2 < 0.80) {
+    // 40% of total -> 0..50
+    return Number((u * 50).toFixed(4));
+  } else if (r2 < 0.90) {
+    // 5% of total -> 50..100
+    return Number((50 + u * 50).toFixed(4));
+  } else if (r2 < 0.96) {
+    // 3% of total -> 100..150
+    return Number((100 + u * 50).toFixed(4));
+  } else {
+    // 2% of total -> 150..200
+    return Number((150 + u * 50).toFixed(4));
   }
 }
 
-async function finalizeFallback(redis, roundId) {
-  if (!redis) return;
+async function ensureEndPct(redis, roundId) {
+  const key = `round:endPct:${roundId}`;
+  const existing = await redis.get(key);
+  if (typeof existing === "number") return existing;
+  if (typeof existing === "string") {
+    const n = Number(existing);
+    if (isFinite(n)) return n;
+  }
+  const endPct = pickEndPctByRoundId(roundId);
+  await redis.set(key, String(endPct));
+  return endPct;
+}
+
+async function finalizeRound(redis, roundId) {
   if (roundId < 0) return;
 
-  const endAt = roundStartAt(roundId) + ROUND_MS;
-  if (Date.now() < endAt) return;
+  const now = Date.now();
+  const endAt = roundEndAt(roundId);
+  if (now < endAt) return; // ещё не закончился
 
-  const endKey = `round:endPct:${roundId}`;
-  let endPct = await redis.get(endKey);
+  const finalizedKey = `round:finalized:${roundId}`;
+  const already = await redis.get(finalizedKey);
+  if (already) return;
 
-  const lastArr = await redis.lrange(HISTORY_KEY, 0, 0);
-  const last = lastArr?.[0] ? safeJson(lastArr[0]) : null;
-  if (last?.roundId === roundId) return;
+  const endPct = await ensureEndPct(redis, roundId);
+  const winSide = (endPct >= 0) ? "LONG" : "SHORT";
 
-  if (endPct == null) {
-    endPct = String(pickEndPctForRound(roundId));
-    await redis.set(endKey, endPct);
-  }
+  const item = {
+    roundId,
+    endPct,
+    winSide,
+    startAt: roundStartAt(roundId),
+    endAt,
+    endedAt: endAt
+  };
 
-  const item = JSON.stringify({ roundId, pct: Number(endPct), ts: endAt });
-  await redis.lpush(HISTORY_KEY, item);
-  await redis.ltrim(HISTORY_KEY, 0, 49);
+  await redis.lpush(HISTORY_KEY, JSON.stringify(item));
+  await redis.ltrim(HISTORY_KEY, 0, HISTORY_MAX - 1);
+  await redis.set(finalizedKey, "1");
 }
 
 function safeJson(s) {
   try { return JSON.parse(s); } catch { return null; }
+}
+
+async function getTotals(redis, roundId) {
+  const key = `round:betTotals:${roundId}`;
+  const h = await redis.hgetall(key);
+  // Upstash может вернуть null
+  const longAmount  = Number(h?.longAmount  || 0);
+  const shortAmount = Number(h?.shortAmount || 0);
+  return {
+    longAmount:  isFinite(longAmount) ? longAmount : 0,
+    shortAmount: isFinite(shortAmount) ? shortAmount : 0
+  };
 }
 
 module.exports = async function handler(req, res) {
@@ -93,42 +135,39 @@ module.exports = async function handler(req, res) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/json");
 
+    const redis = getRedis();
     const now = Date.now();
-    const roundId = roundIdByNow(now);
 
-    const redis = getRedisSafe();
+    const { rid, start, phase, phaseEndsAt } = phaseByNow(now);
+    const endAt = roundEndAt(rid);
+    const nextAt = roundStartAt(rid + 1);
 
-    // финализируем прошлые раунды (чтобы история не пропадала)
-    await finalizeFallback(redis, roundId - 1);
-    await finalizeFallback(redis, roundId - 2);
+    // финализируем несколько предыдущих раундов на всякий случай
+    await finalizeRound(redis, rid - 1);
+    await finalizeRound(redis, rid - 2);
+    await finalizeRound(redis, rid - 3);
 
-    const startAt = roundStartAt(roundId);
-    const endAt = startAt + BET_MS;
-    const nextAt = startAt + ROUND_MS;
+    // история из upstash
+    const raw = await redis.lrange(HISTORY_KEY, 0, HISTORY_MAX - 1);
+    const history = (raw || []).map(safeJson).filter(Boolean);
 
-    let history = [];
-    if (redis) {
-      const rawHist = await redis.lrange(HISTORY_KEY, 0, 9);
-      history = (rawHist || []).map(safeJson).filter(Boolean);
-    }
+    const currentTotals = await getTotals(redis, rid);
 
-    return 
-    // даже если Redis не настроен, можем вычислить результат детерминированно
-    const lastFinishedRoundId = roundId - 1;
-    const lastFinishedPct = lastFinishedRoundId >= 0 ? pickEndPctForRound(lastFinishedRoundId) : 0;
-res.status(200).json({
+    return res.status(200).json({
       ok: true,
       serverNow: now,
       betMs: BET_MS,
+      playMs: PLAY_MS,
       roundMs: ROUND_MS,
-      treasuryAddress: process.env.TREASURY_TON_ADDRESS || "",
-      round: { roundId, startAt, endAt, nextAt },
-      chances: { long: 50, short: 50 },
-      history,
-      lastFinished: { roundId: lastFinishedRoundId, pct: lastFinishedPct }
+      phase,
+      phaseEndsAt,
+      round: { roundId: rid, startAt: start, endAt, nextAt },
+      currentTotals,
+      history
     });
   } catch (e) {
     return res.status(500).json({
+      ok: false,
       error: "state_error",
       message: String(e && (e.stack || e.message || e))
     });
