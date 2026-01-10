@@ -24,6 +24,42 @@ function getRedisSafe() {
   return new Redis({ url, token });
 }
 
+// детерминированный RNG (чтобы распределение было одинаковым для всех)
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ✅ РАСПРЕДЕЛЕНИЕ (как ты написал)
+// LONG: 0..50 = 40%, 50..100 = 5%, 100..150 = 3%, 150..200 = 2%  (итого 50%)
+// SHORT: 0..-100 = 50%
+function pickEndPctForRound(roundId) {
+  const rng = mulberry32(roundId * 1000003 + 1337);
+  const r = rng();
+
+  // SHORT (50%)
+  if (r < 0.50) {
+    return -Math.round(rng() * 100); // 0..-100
+  }
+
+  // LONG (50%) с внутренними весами 0.40/0.05/0.03/0.02
+  const x = (r - 0.50) / 0.50; // 0..1
+  if (x < 0.80) { // 40% / 50%
+    return Math.round(rng() * 50); // 0..50
+  } else if (x < 0.90) { // 5% / 50%
+    return 50 + Math.round(rng() * 50); // 50..100
+  } else if (x < 0.96) { // 3% / 50%
+    return 100 + Math.round(rng() * 50); // 100..150
+  } else { // 2% / 50%
+    return 150 + Math.round(rng() * 50); // 150..200
+  }
+}
+
 async function finalizeFallback(redis, roundId) {
   if (!redis) return;
   if (roundId < 0) return;
@@ -39,7 +75,7 @@ async function finalizeFallback(redis, roundId) {
   if (last?.roundId === roundId) return;
 
   if (endPct == null) {
-    endPct = "0";
+    endPct = String(pickEndPctForRound(roundId));
     await redis.set(endKey, endPct);
   }
 
@@ -83,6 +119,7 @@ module.exports = async function handler(req, res) {
       roundMs: ROUND_MS,
       treasuryAddress: process.env.TREASURY_TON_ADDRESS || "",
       round: { roundId, startAt, endAt, nextAt },
+      chances: { long: 50, short: 50 },
       history
     });
   } catch (e) {
