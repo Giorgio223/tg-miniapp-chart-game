@@ -14,17 +14,10 @@ function getRedis() {
   return new Redis({ url, token });
 }
 
-function roundIdByNow(nowMs) {
-  return Math.floor(nowMs / ROUND_MS);
-}
-function roundStartAt(roundId) {
-  return roundId * ROUND_MS;
-}
-function clamp(x, a, b) {
-  return Math.max(a, Math.min(b, x));
-}
+function roundIdByNow(nowMs) { return Math.floor(nowMs / ROUND_MS); }
+function roundStartAt(roundId) { return roundId * ROUND_MS; }
+function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
 
-// детерминированный rng для “волатильности” формы (НЕ для финала)
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -35,69 +28,64 @@ function mulberry32(seed) {
   };
 }
 
-// Генератор волатильной серии с гарантированным финалом endPct
 function genRoundSeries(roundId, nowMs, endPct) {
   const start = roundStartAt(roundId);
   const end = start + ROUND_MS;
 
-  const stepMs = 200; // чем больше — тем медленнее “рисование”
+  // IMPORTANT: время отдаём В МИЛЛИСЕКУНДАХ как и раньше, фронт сам сконвертит
+  const stepMs = 220; // медленнее, меньше лагов
   const rng = mulberry32(roundId * 1000003 + 2025);
 
   const out = [];
-
   const MIN = -110;
   const MAX = 210;
 
   let v = 0;
   let vel = 0;
 
-  // режимы каждые 1.6–3.8 сек
   let nextRegimeAt = start;
-  let vol = 2.0;
+  let vol = 1.6;
   let drift = 0.0;
 
   for (let t = start; t <= Math.min(nowMs, end); t += stepMs) {
     if (t >= nextRegimeAt) {
       const m = rng();
-      if (m < 0.40) {
-        vol = 1.3 + rng() * 1.8;
-        drift = (rng() * 0.30 - 0.15);
-      } else if (m < 0.80) {
-        vol = 2.2 + rng() * 2.8;
-        drift = (rng() < 0.5 ? -1 : 1) * (0.05 + rng() * 0.45);
-      } else {
-        vol = 3.8 + rng() * 4.5;
-        drift = (rng() * 0.60 - 0.30);
-      }
-      nextRegimeAt = t + (1600 + Math.floor(rng() * 2200));
+      // больше “гор/рек”, меньше “дребезга”
+      if (m < 0.35) { vol = 1.2 + rng() * 1.2; drift = (rng()*0.20 - 0.10); }
+      else if (m < 0.80) { vol = 2.0 + rng() * 2.2; drift = (rng()<0.5?-1:1)*(0.08 + rng()*0.30); }
+      else { vol = 3.0 + rng() * 3.5; drift = (rng()*0.35 - 0.175); }
+
+      nextRegimeAt = t + (1800 + Math.floor(rng() * 2600));
     }
 
     const p = clamp((t - start) / ROUND_MS, 0, 1);
 
-    const anchor =
-      endPct * p +
-      Math.sin((t - start) / 820) * (1.8 + vol * 0.30) +
-      Math.sin((t - start) / 2400) * (1.2 + vol * 0.18);
+    const longWave =
+      Math.sin((t - start) / 1800) * (3.0 + vol * 0.45) +
+      Math.sin((t - start) / 5200) * (4.5 + vol * 0.55);
 
-    const pull = (anchor - v) * (0.05 + p * 0.02);
+    // плавная “река” к финалу
+    const anchor = endPct * p + longWave;
 
-    const noise = (rng() * 2 - 1) * vol;
-    const jerk = (rng() < 0.02 ? (rng() * 2 - 1) * (2.0 + vol) : 0); // редкие рывки
+    const pull = (anchor - v) * (0.045 + p * 0.030);
 
-    vel = (vel + pull + drift + noise + jerk) * 0.86;
+    // шум уменьшен
+    const noise = (rng() * 2 - 1) * (vol * 0.45);
+
+    // редкие рывки (азарт)
+    const jerk = (rng() < 0.012 ? (rng()*2-1) * (2.2 + vol*1.3) : 0);
+
+    vel = (vel + pull + drift + noise + jerk) * 0.88;
     v = v + vel;
 
-    // перед концом точнее загоняем в endPct
-    if (end - t <= 1000) {
-      v = v + (endPct - v) * 0.28;
-    }
+    // в конце точно дожимаем к endPct
+    if (end - t <= 1200) v = v + (endPct - v) * 0.30;
 
     v = clamp(v, MIN, MAX);
     out.push([t, v]);
   }
 
   if (!out.length) out.push([start, 0]);
-
   if (nowMs >= end) out.push([end, endPct]);
 
   return out;
@@ -110,17 +98,20 @@ module.exports = async function handler(req, res) {
 
     const redis = getRedis();
     const now = Date.now();
-    const rid = roundIdByNow(now);
 
-    // endPct должен быть общий (из Upstash), чтобы совпало с history/state
-    const endPctRaw = await redis.get(END_PCT_KEY(rid));
+    // ВАЖНО: roundId берём либо из query, либо текущий
+    const q = req.query || {};
+    const ridQ = Number(q.roundId);
+    const roundId = Number.isFinite(ridQ) ? ridQ : roundIdByNow(now);
+
+    const endPctRaw = await redis.get(END_PCT_KEY(roundId));
     const endPct = endPctRaw != null ? Number(endPctRaw) : 0;
 
-    const series = genRoundSeries(rid, now, endPct);
+    const series = genRoundSeries(roundId, now, endPct);
 
     return res.status(200).json({
       ok: true,
-      roundId: rid,
+      roundId,
       endPct,
       series
     });
