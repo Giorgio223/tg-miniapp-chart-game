@@ -99,6 +99,11 @@
       position: relative;
     }
 
+    /* ЖЁСТКО прячем любые ссылки/вотермарки внутри графика */
+    #chart a, #chart [class*="watermark"], #chart [id*="watermark"]{display:none!important; opacity:0!important; pointer-events:none!important;}
+    #chart .tv-lightweight-charts a{display:none!important;}
+    #chart canvas + div{pointer-events:none;} /* на всякий */
+
     .endOrb{
       position:absolute;
       width:12px;height:12px;border-radius:999px;
@@ -155,6 +160,38 @@
       font-weight: 900;
       letter-spacing: .25px;
       text-transform: uppercase;
+    }
+
+    /* Оверлей чтобы прятать цифры шкалы в BET */
+    .scaleCover{
+      position:absolute;
+      top:0;
+      right:0;
+      width:86px;
+      height:100%;
+      background: linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.22));
+      display:none;
+      z-index: 19;
+      pointer-events:none;
+    }
+    .scaleCover.show{display:block;}
+
+    /* Наш единый бейдж значения (чтобы не было “2 значений”) */
+    .valueBadge{
+      position:absolute;
+      right: 10px;
+      top: 16px;
+      z-index: 23;
+      padding:6px 10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.20);
+      backdrop-filter: blur(6px);
+      font-weight:1100;
+      font-size:12px;
+      color: rgba(242,239,255,.95);
+      pointer-events:none;
+      box-shadow: 0 14px 35px rgba(0,0,0,.35);
     }
 
     .historyWrap{
@@ -340,8 +377,43 @@
     .row2{display:flex;gap:10px;margin-top:12px;}
     .row2 .sheetAction{flex:1 1 0;justify-content:center;}
 
-    /* шансы скрыты */
-    #pillChances{display:none!important;}
+    /* ===== Debug UI ===== */
+    .dbgBtn{
+      position:fixed;
+      right:12px;
+      bottom:12px;
+      z-index:9999;
+      width:52px;height:52px;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.22);
+      color: rgba(242,239,255,.92);
+      font-weight:1200;
+      cursor:pointer;
+      box-shadow: 0 18px 45px rgba(0,0,0,.55);
+    }
+    .dbgPanel{
+      position:fixed;
+      right:12px;
+      bottom:72px;
+      z-index:9999;
+      width:min(520px, calc(100vw - 24px));
+      max-height: 52vh;
+      overflow:auto;
+      display:none;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.35);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 22px 60px rgba(0,0,0,.65);
+      padding:10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size:12px;
+      line-height:1.35;
+      white-space: pre-wrap;
+      color: rgba(242,239,255,.90);
+    }
+    .dbgPanel.show{display:block;}
   </style>
 </head>
 
@@ -362,6 +434,8 @@
     <div class="grid">
       <div class="card" id="chartCard">
         <div id="chart">
+          <div class="scaleCover" id="scaleCover"></div>
+          <div class="valueBadge mono" id="valueBadge">0%</div>
           <div class="endOrb" id="endOrb"></div>
         </div>
 
@@ -471,16 +545,39 @@
     </div>
   </div>
 
+  <!-- Debug -->
+  <button class="dbgBtn" id="dbgBtn" type="button">DBG</button>
+  <div class="dbgPanel" id="dbgPanel"></div>
+
 <script>
 (function(){
   const $ = (id) => document.getElementById(id);
 
+  // ===== Debug =====
+  const dbgPanel = $("dbgPanel");
+  const dbgBtn = $("dbgBtn");
+  function dbg(msg){
+    try{
+      const t = new Date().toISOString().slice(11,19);
+      dbgPanel.textContent = `[${t}] ${msg}\n` + dbgPanel.textContent;
+    }catch{}
+  }
+  dbgBtn.addEventListener("click", () => dbgPanel.classList.toggle("show"));
+
+  window.addEventListener("error", (e) => dbg("window.error: " + (e?.message || e)));
+  window.addEventListener("unhandledrejection", (e) => dbg("unhandledrejection: " + (e?.reason?.message || e?.reason || e)));
+
+  const _ce = console.error.bind(console);
+  console.error = (...args) => { _ce(...args); dbg("console.error: " + args.map(a=>String(a)).join(" ")); };
+
+  // ===== TG =====
   const tg = window.Telegram?.WebApp;
   try { tg?.ready?.(); tg?.expand?.(); } catch {}
 
   function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
   function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
 
+  // ===== API =====
   const API_BASE = window.API_BASE || location.origin;
   const apiUrl = (path) => new URL(path, API_BASE).toString();
 
@@ -505,12 +602,14 @@
     return j;
   }
 
+  // ===== Hint / Toast =====
   function setHint(t){
     const el = $("hint");
     if (el) el.textContent = t || "";
   }
   function setSafeError(msg){
     setHint(msg);
+    dbg(msg);
     console.warn(msg);
   }
 
@@ -527,7 +626,7 @@
     }, 1700);
   }
 
-  // chips
+  // ===== Chips =====
   let selectedAmt = 0.10;
   $("chips")?.addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
@@ -538,8 +637,8 @@
     $("betAmt").textContent = selectedAmt.toFixed(2);
   });
 
-  // ===== Local history fallback =====
-  const LS_HIST = "localHistory_v2";
+  // ===== History (local) =====
+  const LS_HIST = "localHistory_v3";
   function readLocalHistory(){
     try{
       const raw = localStorage.getItem(LS_HIST);
@@ -551,17 +650,19 @@
     const v = Number(pct);
     if (!Number.isFinite(v)) return;
     const arr = readLocalHistory();
+    // защита от дубля подряд
+    if (arr.length && Math.round(Number(arr[0].pct)) === Math.round(v)) return;
     arr.unshift({ pct: v, ts: Date.now() });
-    const trimmed = arr.slice(0, 40);
+    const trimmed = arr.slice(0, 50);
     try{ localStorage.setItem(LS_HIST, JSON.stringify(trimmed)); }catch{}
   }
 
-  function renderHistory(items){
+  function renderHistory(serverItems){
     const row = $("histRow");
     if(!row) return;
     row.innerHTML = "";
 
-    const serverArr = Array.isArray(items) ? items : [];
+    const serverArr = Array.isArray(serverItems) ? serverItems : [];
     const localArr = readLocalHistory();
     const merged = serverArr.length ? serverArr : localArr;
 
@@ -576,7 +677,6 @@
 
     for (const it of merged.slice(0, 10)) {
       const pct = Number(it?.pct ?? it?.endPct ?? it?.resultPct ?? it?.value ?? 0);
-
       const wrap = document.createElement("div");
       wrap.className = "histItem";
 
@@ -617,18 +717,17 @@
     else cdRingEl.setAttribute("stroke", "rgba(255,77,77,.95)");
   }
 
-  // ===== Server time offset =====
+  // ===== Server time =====
   let timeOffsetMs = 0;
   function serverNow(){ return Date.now() + timeOffsetMs; }
 
-  // ===== State snapshot (чтобы круг НЕ пропадал) =====
+  // ===== lastState чтобы BET не ломался =====
   let lastState = null;
 
   // ===== Current =====
   let currentRound = null;
   let betMs = 7000;
   let lastPhase = null;
-  let lastSeenRoundId = null;
 
   // ===== Wallet (TonConnect) =====
   let __tonCore = null;
@@ -693,6 +792,7 @@
         .catch(() => {});
     }catch(e){
       console.warn("TonConnect init error:", e);
+      dbg("TonConnect init error: " + (e?.message || e));
       window.__tonUI = null;
       window.__wallet = null;
     }
@@ -758,7 +858,7 @@
     updateCountdownAndButtons();
   });
 
-  // ===== Deposit =====
+  // ===== Deposit modal hooks (оставил как было, но без лишнего) =====
   const depositModal = $("depositModal");
   function openDepositModal(){ depositModal?.classList.add("open"); }
   function closeDepositModal(){ depositModal?.classList.remove("open"); }
@@ -823,12 +923,13 @@
   // ===== Chart =====
   let chart=null, area=null, bound=null;
   const endOrb = $("endOrb");
+  const scaleCover = $("scaleCover");
+  const valueBadge = $("valueBadge");
 
   let t = 0;
   let data = [];
   const WINDOW_POINTS = 520;
 
-  // требования: минимум -100%
   const MIN_Y = -100;
   const MAX_Y = 200;
 
@@ -870,7 +971,11 @@
     }catch{}
   }
 
-  // СБРОС ТОЛЬКО ПРИ BET->PLAY
+  function updateValueBadge(){
+    const v = Math.round(Number(cur) || 0);
+    valueBadge.textContent = (v > 0 ? "+" : "") + v + "%";
+  }
+
   function resetForNewRoundPlay(){
     cur = 0;
     vel = 0;
@@ -883,6 +988,7 @@
     applySeriesColorByValue(0);
     ensureBoundNow(0);
     placeOrbAtPoint({ time: 0, value: 0 });
+    updateValueBadge();
 
     try{ chart.timeScale().setVisibleRange({ from: 0, to: 60 }); }catch{}
   }
@@ -899,11 +1005,11 @@
       rightPriceScale: {
         visible: true,
         borderColor: "rgba(255,255,255,.10)",
-        scaleMargins: { top: 0.10, bottom: 0.12 },
-        ticksVisible: true
+        scaleMargins: { top: 0.10, bottom: 0.12 }
       },
       timeScale: { borderColor: "rgba(255,255,255,.10)", timeVisible:false, secondsVisible:false },
-      crosshair: { vertLine: { visible:false }, horzLine: { visible:false } }
+      crosshair: { vertLine: { visible:false }, horzLine: { visible:false } },
+      watermark: { visible: false } // убираем watermark
     });
 
     const curved =
@@ -917,7 +1023,11 @@
       lineColor: "rgba(49,209,124,.95)",
       topColor: "rgba(49,209,124,.26)",
       bottomColor: "rgba(0,0,0,0)",
-      priceFormat: { type:"custom", formatter: (v) => `${Math.round(Number(v))}%` }
+      priceFormat: { type:"custom", formatter: (v) => `${Math.round(Number(v))}%` },
+
+      // ВАЖНО: УБИРАЕМ стандартные лейблы справа (чтобы не было “2 значений”)
+      priceLineVisible: false,
+      lastValueVisible: false
     });
 
     bound = chart.addLineSeries({
@@ -937,23 +1047,18 @@
     return true;
   }
 
-  // ===== СИЛЬНО МЕДЛЕННЕЕ =====
-  // X: реже добавляем новые точки
-  const ADD_POINT_EVERY_MS = 140; // было 70 -> теперь намного медленнее
+  // ===== ДВИЖЕНИЕ (медленно, но с рывками) =====
+  const ADD_POINT_EVERY_MS = 180; // медленнее по X
   let lastAddTs = 0;
 
-  // режимы: больше рандома, но в целом спокойнее
   function pickRegime(nowMs){
-    const dur = 1800 + Math.random()*3200; // 1.8..5.0 сек
-
-    // 0..1
+    const dur = 2200 + Math.random()*4200; // 2.2..6.4 сек
     const r = Math.random();
 
-    // меньше дрейф => медленнее
     let drift = 0;
-    if (r < 0.38) drift =  0.015 + Math.random()*0.035;      // вверх
-    else if (r < 0.76) drift = -(0.015 + Math.random()*0.035); // вниз
-    else drift = (Math.random()-0.5) * 0.025;                 // флэт
+    if (r < 0.40) drift =  0.010 + Math.random()*0.022;
+    else if (r < 0.80) drift = -(0.010 + Math.random()*0.022);
+    else drift = (Math.random()-0.5) * 0.018;
 
     regime = { until: nowMs + dur, drift };
   }
@@ -961,26 +1066,22 @@
   function stepTrade(nowMs, progress01){
     if (nowMs > regime.until) pickRegime(nowMs);
 
-    // шум меньше => спокойнее
-    const noise = (Math.random()-0.5) * 0.06;
+    const noise = (Math.random()-0.5) * 0.045;
 
-    // импульсы редкие, но иногда сильнее (азарт)
+    // редкие сильные рывки
     let impulse = 0;
-    if (Math.random() < 0.006) {
+    if (Math.random() < 0.0045) {
       const dir = (Math.random()<0.5 ? -1 : 1);
-      impulse = dir * (0.8 + Math.random()*2.8);
+      impulse = dir * (1.2 + Math.random()*3.6);
     }
 
-    // притяжение к финалу — чтобы результат раунда сохранился
     const pullStrength = 0.001 + progress01*progress01*0.020;
     const pull = (roundTarget - cur) * pullStrength;
 
     const accel = regime.drift + noise + impulse + pull;
 
-    // сильнее демпфирование + меньше ускорение => медленнее
-    vel = vel * 0.985 + accel * 0.22;
+    vel = vel * 0.988 + accel * 0.18; // медленнее по “цене”
     cur = cur + vel;
-
     cur = clamp(cur, MIN_Y, MAX_Y);
   }
 
@@ -999,6 +1100,7 @@
     applySeriesColorByValue(cur);
     ensureBoundNow(cur);
     placeOrbAtPoint(pt);
+    updateValueBadge();
 
     try{
       const from = Math.max(0, t - (WINDOW_POINTS - 30));
@@ -1012,6 +1114,7 @@
     applySeriesColorByValue(cur);
     ensureBoundNow(cur);
     placeOrbAtPoint(pt);
+    updateValueBadge();
   }
 
   let rafId = 0;
@@ -1100,8 +1203,6 @@
     $("btnCancelBet").classList.toggle("disabled", !(pos && bettingOpen));
   }
 
-  // ✅ BET: шкала НЕ пропадает, просто скрываем цифры (ticks)
-  // ✅ Countdown круг не пропадает: используем lastState если state не пришёл
   function updateCountdownAndButtons(state){
     const s = state || lastState || {};
     if(!currentRound) return;
@@ -1112,20 +1213,14 @@
     const betWindowMs = Number(w?.betMs || betMs);
     const phase = w?.phase || s?.phase || null;
 
-    // шкала всегда visible:true, в BET прячем деления/цифры
-    try{
-      if (chart){
-        chart.applyOptions({
-          rightPriceScale: {
-            visible: true,
-            ticksVisible: !inBet
-          }
-        });
-      }
-    }catch{}
+    // В BET закрываем цифры шкалы оверлеем (100% работает)
+    scaleCover.classList.toggle("show", inBet);
 
-    // BET->PLAY: новый раунд начинается с 0%
+    // BET->PLAY: фиксируем прошлый результат в историю + новый раунд с 0%
     if (lastPhase === "BET" && phase === "PLAY") {
+      // считаем, что итог прошлого раунда = roundTarget (он держит финал)
+      pushLocalHistory(roundTarget);
+      renderHistory(lastState?.history || []);
       resetForNewRoundPlay();
       pickRegime(performance.now());
       addNewPoint();
@@ -1141,6 +1236,7 @@
       cdEl.classList.add("show");
       cdNumEl.textContent = String(secLeft);
       cdSubEl.textContent = "BET";
+
       setRing(betWindowMs > 0 ? (leftMs / betWindowMs) : 0);
       setRingColor(secLeft);
 
@@ -1155,31 +1251,25 @@
     $("btnCancelBet").classList.toggle("disabled", !(pos && inBet && !!getWalletRawLS()));
   }
 
-  // ===== State / Series =====
+  // ===== STATE / SERIES =====
   async function loadState(){
     const s = await apiGet("/api/state?t=" + Date.now());
     lastState = s;
+
+    dbg("state: " + JSON.stringify({ phase:s?.phase, phaseEndsAt:s?.phaseEndsAt, roundId:s?.round?.roundId }, null, 0));
 
     timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
     currentRound = s.round;
     betMs = s.betMs || betMs;
 
-    // история с сервера или локальная
     renderHistory(s.history || []);
 
-    // если сервер отдаёт прошлый результат — тоже кладём в локальную историю
+    // если бек вдруг отдаёт прошлый результат — тоже подхватим
     const possiblePct =
       s?.lastResultPct ?? s?.prevResultPct ?? s?.resultPct ??
       s?.round?.lastResultPct ?? s?.round?.prevResultPct ?? s?.round?.resultPct;
 
     if (Number.isFinite(Number(possiblePct))) pushLocalHistory(Number(possiblePct));
-
-    // запоминаем roundId, чтобы не делать лишнего
-    const rid = s?.round?.roundId ?? s?.roundId ?? null;
-    if (rid && lastSeenRoundId !== rid) {
-      lastSeenRoundId = rid;
-      // ничего не сбрасываем тут (ВАЖНО!) — сброс только BET->PLAY
-    }
 
     updateCountdownAndButtons(s);
   }
@@ -1187,8 +1277,11 @@
   async function loadSeries(){
     try{
       const x = await apiGet("/api/series?t=" + Date.now());
+      dbg("series len: " + String(x?.series?.length ?? 0));
       applyServerTargetFromSeries(x.series);
-    }catch{}
+    }catch(e){
+      dbg("series error: " + (e?.message || e));
+    }
   }
 
   // ===== Bets =====
@@ -1211,6 +1304,7 @@
       await refreshBalance().catch(()=>{});
     }catch(e){
       setHint("Ошибка ставки: " + String(e?.message || e));
+      dbg("bet_place error: " + String(e?.message || e));
     }
   }
 
@@ -1223,17 +1317,14 @@
     if(!raw) { openTonModal(); return; }
 
     try{
-      await apiPost("/api/bet_cancel?t=" + Date.now(), {
-        address: raw,
-        roundId: pos.roundId
-      });
-
+      await apiPost("/api/bet_cancel?t=" + Date.now(), { address: raw, roundId: pos.roundId });
       pos = null;
       setPosStatus();
       setHint("Ставка отменена");
       await refreshBalance().catch(()=>{});
     }catch(e){
       setHint("Не удалось отменить: " + String(e?.message || e));
+      dbg("bet_cancel error: " + String(e?.message || e));
     }
   });
 
@@ -1250,10 +1341,7 @@
     if(!raw) return;
 
     try{
-      const r = await apiPost("/api/bet_settle?t=" + Date.now(), {
-        address: raw,
-        roundId: pos.roundId
-      });
+      const r = await apiPost("/api/bet_settle?t=" + Date.now(), { address: raw, roundId: pos.roundId });
 
       if (r?.status === "pending" || r?.status === "already_settled") return;
 
@@ -1265,14 +1353,13 @@
       const profit = Number(r.profitTon || 0);
 
       if (Number.isFinite(pct)) pushLocalHistory(pct);
+      renderHistory(lastState?.history || []);
 
       showToast(profit >= 0 ? "win" : "lose", (profit >= 0 ? "WIN " : "LOSE ") + sPct);
 
       pos = null;
       setPosStatus();
       setHint("");
-
-      renderHistory(lastState?.history || []);
     }catch(e){}
   }
 
@@ -1296,10 +1383,10 @@
       startLoop60();
 
       setInterval(() => loadState().catch(()=>{}), 900);
-      setInterval(() => loadSeries().catch(()=>{}), 800);
+      setInterval(() => loadSeries().catch(()=>{}), 900);
 
-      // ВАЖНО: теперь update без state НЕ ломает BET/круг (берёт lastState)
-      setInterval(() => updateCountdownAndButtons(), 120);
+      // update без state теперь НЕ ломает BET, потому что берём lastState
+      setInterval(() => updateCountdownAndButtons(), 140);
 
       setInterval(() => trySettleIfNeeded(), 650);
       setInterval(() => refreshBalance().catch(()=>{}), 6500);
