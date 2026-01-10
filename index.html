@@ -5,13 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
   <title>Chart Game</title>
 
-  <!-- Telegram Mini App -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-  <!-- TonConnect UI -->
   <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
-
-  <!-- Lightweight charts -->
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 
   <style>
@@ -220,18 +215,6 @@
     .tri.down::after{ top:-11px; border-top: 9px solid rgba(255,255,255,.92); }
     .pctText{ min-width: 52px; text-align:right; }
 
-    .pill{
-      padding:8px 10px;
-      border-radius:14px;
-      border:1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.20);
-      backdrop-filter: blur(6px);
-      box-shadow: 0 14px 35px rgba(0,0,0,.35);
-      font-weight:1000;
-      font-size:11px;
-      color: rgba(242,239,255,.92);
-    }
-
     .toast{
       position:absolute;
       right:14px;
@@ -357,9 +340,7 @@
     .row2{display:flex;gap:10px;margin-top:12px;}
     .row2 .sheetAction{flex:1 1 0;justify-content:center;}
 
-    a[href*="tradingview"], a[href*="TradingView"]{display:none!important;}
-
-    /* ШАНСЫ скрыты */
+    /* шансы скрыты */
     #pillChances{display:none!important;}
   </style>
 </head>
@@ -368,10 +349,8 @@
   <div class="wrap">
     <div class="topbar">
       <div class="brand"><div class="logo"></div></div>
-
       <div class="rightbar">
         <button class="btn orange" id="btnTopup" type="button">Пополнить</button>
-
         <button class="btn primary" id="btnBalance" type="button">
           <img class="tonIcon" src="/ton.png" alt="TON" />
           <span>Баланс:</span>
@@ -408,7 +387,6 @@
 
         <div class="historyWrap">
           <div class="histCol">
-            <div class="pill" id="pillChances">Шансы</div>
             <div class="histRow" id="histRow"></div>
           </div>
         </div>
@@ -497,15 +475,12 @@
 (function(){
   const $ = (id) => document.getElementById(id);
 
-  // ===== TG =====
   const tg = window.Telegram?.WebApp;
   try { tg?.ready?.(); tg?.expand?.(); } catch {}
 
-  // ===== Utils =====
   function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
   function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
 
-  // ===== API =====
   const API_BASE = window.API_BASE || location.origin;
   const apiUrl = (path) => new URL(path, API_BASE).toString();
 
@@ -530,7 +505,6 @@
     return j;
   }
 
-  // ===== Hint / Toast =====
   function setHint(t){
     const el = $("hint");
     if (el) el.textContent = t || "";
@@ -553,7 +527,7 @@
     }, 1700);
   }
 
-  // ===== Chips =====
+  // chips
   let selectedAmt = 0.10;
   $("chips")?.addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
@@ -564,8 +538,8 @@
     $("betAmt").textContent = selectedAmt.toFixed(2);
   });
 
-  // ===== Local history fallback (если backend пустой) =====
-  const LS_HIST = "localHistory_v1";
+  // ===== Local history fallback =====
+  const LS_HIST = "localHistory_v2";
   function readLocalHistory(){
     try{
       const raw = localStorage.getItem(LS_HIST);
@@ -578,11 +552,10 @@
     if (!Number.isFinite(v)) return;
     const arr = readLocalHistory();
     arr.unshift({ pct: v, ts: Date.now() });
-    const trimmed = arr.slice(0, 30);
+    const trimmed = arr.slice(0, 40);
     try{ localStorage.setItem(LS_HIST, JSON.stringify(trimmed)); }catch{}
   }
 
-  // ===== History render (всегда видно) =====
   function renderHistory(items){
     const row = $("histRow");
     if(!row) return;
@@ -590,7 +563,6 @@
 
     const serverArr = Array.isArray(items) ? items : [];
     const localArr = readLocalHistory();
-
     const merged = serverArr.length ? serverArr : localArr;
 
     if (!merged.length) {
@@ -603,7 +575,7 @@
     }
 
     for (const it of merged.slice(0, 10)) {
-      const pct = Number(it?.pct ?? it?.endPct ?? it?.resultPct ?? 0);
+      const pct = Number(it?.pct ?? it?.endPct ?? it?.resultPct ?? it?.value ?? 0);
 
       const wrap = document.createElement("div");
       wrap.className = "histItem";
@@ -649,10 +621,14 @@
   let timeOffsetMs = 0;
   function serverNow(){ return Date.now() + timeOffsetMs; }
 
-  // ===== Current state =====
+  // ===== State snapshot (чтобы круг НЕ пропадал) =====
+  let lastState = null;
+
+  // ===== Current =====
   let currentRound = null;
   let betMs = 7000;
   let lastPhase = null;
+  let lastSeenRoundId = null;
 
   // ===== Wallet (TonConnect) =====
   let __tonCore = null;
@@ -689,7 +665,6 @@
     return fr;
   }
 
-  // TonConnectUI init
   (function initTonConnect(){
     try{
       const TonConnectUI = window.TON_CONNECT_UI?.TonConnectUI;
@@ -698,9 +673,7 @@
       const tonUI = new TonConnectUI({
         manifestUrl: location.origin + "/tonconnect-manifest.json",
         uiPreferences: { theme: "DARK" },
-        actionsConfiguration: {
-          twaReturnUrl: (window.__TWA_RETURN_URL || location.href)
-        }
+        actionsConfiguration: { twaReturnUrl: (window.__TWA_RETURN_URL || location.href) }
       });
 
       window.__tonUI = tonUI;
@@ -725,7 +698,6 @@
     }
   })();
 
-  // Wallet modal
   const tonModal = $("tonModal");
   function openTonModal(){ tonModal?.classList.add("open"); }
   function closeTonModal(){ tonModal?.classList.remove("open"); }
@@ -755,10 +727,7 @@
     const raw = getWalletRawLS();
     const walletStatus = $("walletStatus");
     if (!walletStatus) return;
-    if (!raw){
-      walletStatus.textContent = "Not connected";
-      return;
-    }
+    if (!raw){ walletStatus.textContent = "Not connected"; return; }
     const fr = await getWalletFriendlyLS();
     walletStatus.textContent = shortAddr(fr || raw);
   }
@@ -808,7 +777,6 @@
   async function doDepositTon(amountTon){
     const raw = getWalletRawLS();
     if(!raw) throw new Error("no_wallet");
-
     if (!window.__tonUI?.sendTransaction) throw new Error("tonconnect_not_ready");
 
     const info = await apiGet("/api/state?t=" + Date.now());
@@ -834,11 +802,7 @@
     await window.__tonUI.sendTransaction(tx);
 
     try{
-      await apiPost("/api/deposit_credit?t=" + Date.now(), {
-        address: raw,
-        amountTon,
-        comment
-      });
+      await apiPost("/api/deposit_credit?t=" + Date.now(), { address: raw, amountTon, comment });
     }catch{}
   }
 
@@ -856,14 +820,11 @@
     }
   });
 
-  // ===== Chart (Trading style 60fps) =====
+  // ===== Chart =====
   let chart=null, area=null, bound=null;
   const endOrb = $("endOrb");
 
-  // искусственная ось времени
   let t = 0;
-
-  // буфер точек
   let data = [];
   const WINDOW_POINTS = 520;
 
@@ -871,17 +832,13 @@
   const MIN_Y = -100;
   const MAX_Y = 200;
 
-  // состояние “цены”
   let cur = 0;
   let vel = 0;
 
-  // цель раунда
   let roundTarget = 0;
 
-  // режимы движения (тренд/флэт)
   let regime = { until: 0, drift: 0 };
 
-  // камера по Y
   let camCenter = 0;
   const CAM_WINDOW = 60;
   const CAM_EASE = 0.08;
@@ -913,18 +870,20 @@
     }catch{}
   }
 
-  // ВАЖНО: сброс делаем ТОЛЬКО когда начинается PLAY (после BET),
-  // а во время BET график НЕ сбрасывается — он продолжает движение.
+  // СБРОС ТОЛЬКО ПРИ BET->PLAY
   function resetForNewRoundPlay(){
     cur = 0;
     vel = 0;
     camCenter = 0;
+
     t = 0;
     data = [{ time: 0, value: 0 }];
+
     try{ area.setData(data); }catch{}
     applySeriesColorByValue(0);
     ensureBoundNow(0);
     placeOrbAtPoint({ time: 0, value: 0 });
+
     try{ chart.timeScale().setVisibleRange({ from: 0, to: 60 }); }catch{}
   }
 
@@ -940,13 +899,10 @@
       rightPriceScale: {
         visible: true,
         borderColor: "rgba(255,255,255,.10)",
-        scaleMargins: { top: 0.10, bottom: 0.12 }
+        scaleMargins: { top: 0.10, bottom: 0.12 },
+        ticksVisible: true
       },
-      timeScale: {
-        borderColor: "rgba(255,255,255,.10)",
-        timeVisible:false,
-        secondsVisible:false
-      },
+      timeScale: { borderColor: "rgba(255,255,255,.10)", timeVisible:false, secondsVisible:false },
       crosshair: { vertLine: { visible:false }, horzLine: { visible:false } }
     });
 
@@ -964,7 +920,6 @@
       priceFormat: { type:"custom", formatter: (v) => `${Math.round(Number(v))}%` }
     });
 
-    // bound series для камеры
     bound = chart.addLineSeries({
       color: "rgba(0,0,0,0)",
       lineWidth: 1,
@@ -972,7 +927,6 @@
       priceLineVisible: false
     });
 
-    // стартуем с 0
     resetForNewRoundPlay();
 
     const ro = new ResizeObserver(() => {
@@ -983,21 +937,23 @@
     return true;
   }
 
-  // чуть медленнее прорисовка (чтобы не летало), но без “по точкам”
-  const ADD_POINT_EVERY_MS = 70; // ~14 точек/сек
+  // ===== СИЛЬНО МЕДЛЕННЕЕ =====
+  // X: реже добавляем новые точки
+  const ADD_POINT_EVERY_MS = 140; // было 70 -> теперь намного медленнее
   let lastAddTs = 0;
 
-  // более рандомно, но с сохранением финала (pull к цели усиливается к концу)
+  // режимы: больше рандома, но в целом спокойнее
   function pickRegime(nowMs){
-    const dur = 1400 + Math.random()*2600; // 1.4..4.0
+    const dur = 1800 + Math.random()*3200; // 1.8..5.0 сек
 
     // 0..1
     const r = Math.random();
 
+    // меньше дрейф => медленнее
     let drift = 0;
-    if (r < 0.40) drift =  0.04 + Math.random()*0.10;   // up
-    else if (r < 0.80) drift = -(0.04 + Math.random()*0.10); // down
-    else drift = (Math.random()-0.5)*0.05; // flat сильнее гуляет
+    if (r < 0.38) drift =  0.015 + Math.random()*0.035;      // вверх
+    else if (r < 0.76) drift = -(0.015 + Math.random()*0.035); // вниз
+    else drift = (Math.random()-0.5) * 0.025;                 // флэт
 
     regime = { until: nowMs + dur, drift };
   }
@@ -1005,24 +961,24 @@
   function stepTrade(nowMs, progress01){
     if (nowMs > regime.until) pickRegime(nowMs);
 
-    // шум чуть выше (рандомнее)
-    const noise = (Math.random()-0.5) * 0.14;
+    // шум меньше => спокойнее
+    const noise = (Math.random()-0.5) * 0.06;
 
-    // свечные импульсы реже и мягче
+    // импульсы редкие, но иногда сильнее (азарт)
     let impulse = 0;
-    if (Math.random() < 0.008) {
+    if (Math.random() < 0.006) {
       const dir = (Math.random()<0.5 ? -1 : 1);
-      impulse = dir * (0.6 + Math.random()*2.2);
+      impulse = dir * (0.8 + Math.random()*2.8);
     }
 
-    // притяжение к roundTarget усиливается к концу — финал сохраняется
-    const pullStrength = 0.001 + progress01*progress01*0.018;
+    // притяжение к финалу — чтобы результат раунда сохранился
+    const pullStrength = 0.001 + progress01*progress01*0.020;
     const pull = (roundTarget - cur) * pullStrength;
 
     const accel = regime.drift + noise + impulse + pull;
 
-    // медленнее “рынок”
-    vel = vel * 0.975 + accel * 0.55;
+    // сильнее демпфирование + меньше ускорение => медленнее
+    vel = vel * 0.985 + accel * 0.22;
     cur = cur + vel;
 
     cur = clamp(cur, MIN_Y, MAX_Y);
@@ -1037,7 +993,9 @@
     const pt = { time: t, value: Number(cur.toFixed(4)) };
     data.push(pt);
     ensureWindow();
+
     try{ area.update(pt); }catch{ try{ area.setData(data); }catch{} }
+
     applySeriesColorByValue(cur);
     ensureBoundNow(cur);
     placeOrbAtPoint(pt);
@@ -1049,7 +1007,6 @@
   }
 
   function updateLastPoint(){
-    // 60fps обновляем последнюю точку (та же time)
     const pt = { time: t, value: Number(cur.toFixed(4)) };
     try{ area.update(pt); }catch{}
     applySeriesColorByValue(cur);
@@ -1060,25 +1017,15 @@
   let rafId = 0;
   function startLoop60(){
     stopLoop60();
+
     const start = performance.now();
     lastAddTs = start;
     pickRegime(start);
 
-    // НЕ сбрасываем тут постоянно — сброс делаем только при BET->PLAY
-    // Если вдруг график пустой — гарантируем первую точку:
     if (!data.length) resetForNewRoundPlay();
-    if (data.length === 1 && data[0]?.time === 0 && t === 0) {
-      // ок
-    } else if (t === 0) {
-      // гарант
-      resetForNewRoundPlay();
-    }
-
-    // первую точку уже есть (0). добавим следующую чтобы update работал красиво
     addNewPoint();
 
     const tick = (now) => {
-      // прогресс раунда 0..1
       let progress01 = 0;
       try{
         const ns = serverNow();
@@ -1120,7 +1067,7 @@
     roundTarget = clamp(lastVal, MIN_Y, MAX_Y);
   }
 
-  // ===== BET window + hiding ONLY NUMBERS on BET =====
+  // ===== BET window =====
   function getBetWindowFromState(s){
     const round = s?.round || null;
     if (!round) return null;
@@ -1153,10 +1100,10 @@
     $("btnCancelBet").classList.toggle("disabled", !(pos && bettingOpen));
   }
 
-  // В BET мы НЕ сбрасываем график. Только скрываем цифры справа.
-  // В PLAY — показываем цифры и (если только что вышли из BET) сбрасываем в 0%.
+  // ✅ BET: шкала НЕ пропадает, просто скрываем цифры (ticks)
+  // ✅ Countdown круг не пропадает: используем lastState если state не пришёл
   function updateCountdownAndButtons(state){
-    const s = state || {};
+    const s = state || lastState || {};
     if(!currentRound) return;
 
     const w = getBetWindowFromState(s);
@@ -1165,30 +1112,22 @@
     const betWindowMs = Number(w?.betMs || betMs);
     const phase = w?.phase || s?.phase || null;
 
-    // 1) скрыть/показать цифры на шкале, но НЕ ломать камеру/график
-    //    (в 4.2 ticksVisible есть; если вдруг нет — fallback на visible)
+    // шкала всегда visible:true, в BET прячем деления/цифры
     try{
       if (chart){
-        const opts = inBet
-          ? { rightPriceScale: { visible: true, ticksVisible: false } }
-          : { rightPriceScale: { visible: true, ticksVisible: true } };
-        chart.applyOptions(opts);
+        chart.applyOptions({
+          rightPriceScale: {
+            visible: true,
+            ticksVisible: !inBet
+          }
+        });
       }
-    }catch{
-      // fallback: если ticksVisible не поддерживается
-      try{
-        if (chart){
-          chart.applyOptions({ rightPriceScale: { visible: !inBet } });
-        }
-      }catch{}
-    }
+    }catch{}
 
-    // 2) Если фаза перешла BET -> PLAY: СБРОС в 0% и новый раунд начинается с нуля
+    // BET->PLAY: новый раунд начинается с 0%
     if (lastPhase === "BET" && phase === "PLAY") {
       resetForNewRoundPlay();
-      // чтобы движение было “рынком” сразу, не стояло
       pickRegime(performance.now());
-      // и чтобы линия не выглядела пустой:
       addNewPoint();
     }
     lastPhase = phase;
@@ -1202,7 +1141,6 @@
       cdEl.classList.add("show");
       cdNumEl.textContent = String(secLeft);
       cdSubEl.textContent = "BET";
-
       setRing(betWindowMs > 0 ? (leftMs / betWindowMs) : 0);
       setRingColor(secLeft);
 
@@ -1217,15 +1155,31 @@
     $("btnCancelBet").classList.toggle("disabled", !(pos && inBet && !!getWalletRawLS()));
   }
 
-  // ===== STATE / SERIES =====
+  // ===== State / Series =====
   async function loadState(){
     const s = await apiGet("/api/state?t=" + Date.now());
+    lastState = s;
+
     timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
     currentRound = s.round;
     betMs = s.betMs || betMs;
 
-    // история
+    // история с сервера или локальная
     renderHistory(s.history || []);
+
+    // если сервер отдаёт прошлый результат — тоже кладём в локальную историю
+    const possiblePct =
+      s?.lastResultPct ?? s?.prevResultPct ?? s?.resultPct ??
+      s?.round?.lastResultPct ?? s?.round?.prevResultPct ?? s?.round?.resultPct;
+
+    if (Number.isFinite(Number(possiblePct))) pushLocalHistory(Number(possiblePct));
+
+    // запоминаем roundId, чтобы не делать лишнего
+    const rid = s?.round?.roundId ?? s?.roundId ?? null;
+    if (rid && lastSeenRoundId !== rid) {
+      lastSeenRoundId = rid;
+      // ничего не сбрасываем тут (ВАЖНО!) — сброс только BET->PLAY
+    }
 
     updateCountdownAndButtons(s);
   }
@@ -1279,7 +1233,7 @@
       setHint("Ставка отменена");
       await refreshBalance().catch(()=>{});
     }catch(e){
-      setHint("Не удалось отменить (нужен /api/bet_cancel): " + String(e?.message || e));
+      setHint("Не удалось отменить: " + String(e?.message || e));
     }
   });
 
@@ -1310,10 +1264,7 @@
       const sPct = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
       const profit = Number(r.profitTon || 0);
 
-      // ПИШЕМ В ЛОКАЛЬНУЮ ИСТОРИЮ (чтобы не было “пусто”)
-      if (Number.isFinite(pct)) {
-        pushLocalHistory(pct);
-      }
+      if (Number.isFinite(pct)) pushLocalHistory(pct);
 
       showToast(profit >= 0 ? "win" : "lose", (profit >= 0 ? "WIN " : "LOSE ") + sPct);
 
@@ -1321,8 +1272,7 @@
       setPosStatus();
       setHint("");
 
-      // перерисуем историю сразу
-      renderHistory([]); // подтянет localHistory если сервер пустой
+      renderHistory(lastState?.history || []);
     }catch(e){}
   }
 
@@ -1343,12 +1293,13 @@
       await loadState().catch(e => setSafeError("STATE error: " + (e?.message || e)));
       await loadSeries().catch(()=>{});
 
-      // старт 60fps
       startLoop60();
 
       setInterval(() => loadState().catch(()=>{}), 900);
-      setInterval(() => loadSeries().catch(()=>{}), 700);
-      setInterval(() => updateCountdownAndButtons(), 160);
+      setInterval(() => loadSeries().catch(()=>{}), 800);
+
+      // ВАЖНО: теперь update без state НЕ ломает BET/круг (берёт lastState)
+      setInterval(() => updateCountdownAndButtons(), 120);
 
       setInterval(() => trySettleIfNeeded(), 650);
       setInterval(() => refreshBalance().catch(()=>{}), 6500);
