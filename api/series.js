@@ -1,50 +1,7 @@
-export const config = { runtime: "nodejs" };
+const { getRedis } = require("../lib/redis");
+const { ROUND_MS, MIN_Y, MAX_Y, clamp } = require("../lib/game");
 
-import { getRedis } from "../lib/redis.js";
-import { BET_MS, ROUND_MS, MIN_Y, MAX_Y, roundIdByNow, clamp } from "../lib/game.js";
-
-const SERIES_KEY = "chart:series";      // JSON [[ts,value],...]
-const LAST_PCT_KEY = "chart:lastPct";   // string number
-const LOCK_PREFIX = "chart:tick:";      // lock per second
-
-function rand(min, max) {
-  return min + Math.random() * (max - min);
-}
-
-async function ensureRoundStart(redis, roundId) {
-  const key = `round:startPct:${roundId}`;
-  const exists = await redis.get(key);
-  if (exists != null) return Number(exists);
-
-  const last = Number(await redis.get(LAST_PCT_KEY));
-  const v = Number.isFinite(last) ? last : 0;
-  await redis.set(key, String(v), { ex: 24 * 60 * 60 });
-  return v;
-}
-
-async function finalizeRoundIfNeeded(redis, roundId, now) {
-  const endKey = `round:endPct:${roundId}`;
-  const done = await redis.get(endKey);
-  if (done != null) return;
-
-  const roundEnd = roundId * ROUND_MS + ROUND_MS;
-  if (now < roundEnd) return;
-
-  const start = Number(await redis.get(`round:startPct:${roundId}`));
-  const end = Number(await redis.get(LAST_PCT_KEY));
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return;
-
-  const pct = clamp(end - start, MIN_Y, MAX_Y);
-  await redis.set(endKey, String(pct), { ex: 24 * 60 * 60 });
-
-  // историю делаем совместимую со state.js ниже
-  const item = { roundId, pct: Math.round(pct), ts: now };
-  await redis.lpush("round:history", JSON.stringify(item));
-  await redis.ltrim("round:history", 0, 17);
-  await redis.expire("round:history", 24 * 60 * 60);
-}
-
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json");
 
@@ -55,67 +12,128 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "redis_init_failed", message: String(e.message || e) });
   }
 
+  if (req.method !== "GET") return res.status(405).json({ error: "method" });
+
+  const SERIES_KEY = "chart:series";          // JSON [[ts,value],...]
+  const CUR_PCT_KEY = "chart:curPct";         // string number
+  const CUR_VEL_KEY = "chart:curVel";         // string number (инерция)
+  const CUR_RID_KEY = "chart:curRoundId";     // string number
+  const LOCK_PREFIX = "chart:tick250:";       // lock на 250мс-тик
+
+  function roundIdByNow(nowMs) {
+    return Math.floor(nowMs / ROUND_MS);
+  }
+
+  // “мягкий шум”
+  function rand(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
   try {
-    if (req.method !== "GET") return res.status(405).json({ error: "method" });
-
     const now = Date.now();
+    const ridNow = roundIdByNow(now);
 
-    // грузим series
+    // ---- загрузим текущее состояние
+    let curRid = Number(await redis.get(CUR_RID_KEY));
+    if (!Number.isFinite(curRid)) curRid = ridNow;
+
+    let curPct = Number(await redis.get(CUR_PCT_KEY));
+    if (!Number.isFinite(curPct)) curPct = 0;
+
+    let vel = Number(await redis.get(CUR_VEL_KEY));
+    if (!Number.isFinite(vel)) vel = 0;
+
     let series = [];
     const raw = await redis.get(SERIES_KEY);
     if (typeof raw === "string" && raw) {
       try { series = JSON.parse(raw); } catch { series = []; }
     }
+    if (!Array.isArray(series)) series = [];
 
-    let lastPct = Number(await redis.get(LAST_PCT_KEY));
-    if (!Number.isFinite(lastPct)) lastPct = 0;
+    // ---- если пусто: стартуем красивой историей около 0
+    if (series.length === 0) {
+      const base = 0;
+      let p = base;
+      let v = 0;
 
-    // init если пусто
-    if (!Array.isArray(series) || series.length === 0) {
-      series = [];
-      let p = lastPct;
-
-      // 90 секунд истории
-      for (let i = 90; i >= 1; i--) {
-        p = clamp(p + rand(-1.6, 1.6), MIN_Y, MAX_Y);
-        series.push([now - i * 1000, Number(p.toFixed(2))]);
+      // 30 секунд истории, 4 точки/сек = 120 точек
+      for (let i = 120; i >= 1; i--) {
+        // мягкая физика
+        v = v * 0.88 + rand(-0.35, 0.35);
+        p = clamp(p + v, MIN_Y, MAX_Y);
+        series.push([now - i * 250, Number(p.toFixed(2))]);
       }
 
-      lastPct = series[series.length - 1][1];
-      await redis.set(SERIES_KEY, JSON.stringify(series), { ex: 60 * 60 });
-      await redis.set(LAST_PCT_KEY, String(lastPct), { ex: 60 * 60 });
+      curPct = series[series.length - 1][1];
+      vel = v;
+      curRid = ridNow;
 
-      // зафиксируем старт текущего раунда
-      await ensureRoundStart(redis, roundIdByNow(now));
+      await redis.set(SERIES_KEY, JSON.stringify(series), { ex: 3600 });
+      await redis.set(CUR_PCT_KEY, String(curPct), { ex: 3600 });
+      await redis.set(CUR_VEL_KEY, String(vel), { ex: 3600 });
+      await redis.set(CUR_RID_KEY, String(curRid), { ex: 3600 });
 
       return res.status(200).json({ serverNow: now, series });
     }
 
-    // раз в секунду добавляем точку (lock)
-    const sec = Math.floor(now / 1000);
-    const lockKey = `${LOCK_PREFIX}${sec}`;
-    const gotLock = await redis.set(lockKey, "1", { nx: true, ex: 5 });
+    // ---- если начался новый раунд: финализируем прошлый и СБРАСЫВАЕМ НА 0
+    if (ridNow !== curRid) {
+      // записываем результат прошлого раунда = curPct
+      const endKey = `round:endPct:${curRid}`;
+      const already = await redis.get(endKey);
+      if (!already) {
+        const pct = clamp(curPct, MIN_Y, MAX_Y);
+        await redis.set(endKey, String(pct), { ex: 86400 });
+
+        const item = { roundId: curRid, pct: Math.round(pct), ts: now };
+        await redis.lpush("round:history", JSON.stringify(item));
+        await redis.ltrim("round:history", 0, 17);
+        await redis.expire("round:history", 86400);
+      }
+
+      // новый раунд начинается с 0
+      curRid = ridNow;
+      curPct = 0;
+      vel = 0;
+
+      // добавим “резет-точку” прямо сейчас, чтобы было видно что старт с 0
+      series.push([now, 0]);
+
+      await redis.set(CUR_RID_KEY, String(curRid), { ex: 3600 });
+      await redis.set(CUR_PCT_KEY, String(curPct), { ex: 3600 });
+      await redis.set(CUR_VEL_KEY, String(vel), { ex: 3600 });
+      // ограничим серию
+      if (series.length > 480) series = series.slice(-480);
+      await redis.set(SERIES_KEY, JSON.stringify(series), { ex: 3600 });
+
+      return res.status(200).json({ serverNow: now, series });
+    }
+
+    // ---- тик каждые 250ms, но с lock (чтобы много запросов не портили данные)
+    const bucket = Math.floor(now / 250);
+    const lockKey = `${LOCK_PREFIX}${bucket}`;
+    const gotLock = await redis.set(lockKey, "1", { nx: true, ex: 3 });
 
     if (gotLock) {
       const lastTs = Number(series[series.length - 1]?.[0] || 0);
+      if (now - lastTs >= 240) {
+        // “волны”: инерция + ограничение скорости
+        vel = vel * 0.90 + rand(-0.42, 0.42);   // шум
+        vel = clamp(vel, -2.2, 2.2);            // ограничение скорости
 
-      if (now - lastTs >= 900) {
-        const prev = Number(series[series.length - 1]?.[1] || 0);
-        lastPct = clamp(prev + rand(-2.2, 2.2), MIN_Y, MAX_Y);
+        curPct = clamp(curPct + vel, MIN_Y, MAX_Y);
 
-        series.push([now, Number(lastPct.toFixed(2))]);
-        if (series.length > 240) series = series.slice(-240);
+        series.push([now, Number(curPct.toFixed(2))]);
+        if (series.length > 480) series = series.slice(-480);
 
-        await redis.set(SERIES_KEY, JSON.stringify(series), { ex: 60 * 60 });
-        await redis.set(LAST_PCT_KEY, String(lastPct), { ex: 60 * 60 });
-
-        const rid = roundIdByNow(now);
-        await ensureRoundStart(redis, rid);
-        await finalizeRoundIfNeeded(redis, rid - 1, now);
+        await redis.set(SERIES_KEY, JSON.stringify(series), { ex: 3600 });
+        await redis.set(CUR_PCT_KEY, String(curPct), { ex: 3600 });
+        await redis.set(CUR_VEL_KEY, String(vel), { ex: 3600 });
+        await redis.set(CUR_RID_KEY, String(curRid), { ex: 3600 });
       }
     }
 
-    // отдаём свежую серию
+    // отдаем актуальную серию
     const raw2 = await redis.get(SERIES_KEY);
     if (typeof raw2 === "string" && raw2) {
       try { series = JSON.parse(raw2); } catch {}
@@ -125,4 +143,4 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: "series_error", message: String(e) });
   }
-}
+};
