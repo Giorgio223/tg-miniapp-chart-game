@@ -363,7 +363,7 @@
 
     a[href*="tradingview"], a[href*="TradingView"]{display:none!important;}
 
-    /* УБИРАЕМ ШАНСЫ С ГРАФИКА */
+    /* УБИРАЕМ ШАНСЫ С ГРАФИКА (ты просил) */
     #pillChances{display:none!important;}
   </style>
 </head>
@@ -507,6 +507,10 @@
   const tg = window.Telegram?.WebApp;
   try { tg?.ready?.(); tg?.expand?.(); } catch {}
 
+  // ===== Utils =====
+  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+  function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
+
   // ===== API =====
   const API_BASE = window.API_BASE || location.origin;
   const apiUrl = (path) => new URL(path, API_BASE).toString();
@@ -531,9 +535,6 @@
     if(!r.ok) throw new Error(path + " " + r.status + " " + (j?.error || j?.message || ""));
     return j;
   }
-
-  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
-  function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
 
   // ===== Wallet (TonConnect) =====
   let __tonCore = null;
@@ -570,7 +571,7 @@
     return fr;
   }
 
-  // TonConnectUI init (стабильно для Telegram Wallet на телефоне)
+  // TonConnectUI init
   (function initTonConnect(){
     try{
       const TonConnectUI = window.TON_CONNECT_UI?.TonConnectUI;
@@ -653,11 +654,15 @@
   async function refreshBalance(){
     const raw = getWalletRawLS();
     if (!raw){ setBalanceTonUI(0); return 0; }
-    const r = await fetch(apiUrl(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
-    const j = await r.json().catch(()=>({}));
-    const ton = Number(j.balanceTon ?? j.ton ?? 0);
-    if (Number.isFinite(ton)) setBalanceTonUI(ton);
-    return ton;
+    try{
+      const r = await fetch(apiUrl(`/api/balance?address=${encodeURIComponent(raw)}&t=${Date.now()}`), { cache:"no-store" });
+      const j = await r.json().catch(()=>({}));
+      const ton = Number(j.balanceTon ?? j.ton ?? 0);
+      if (Number.isFinite(ton)) setBalanceTonUI(ton);
+      return ton;
+    }catch{
+      return 0;
+    }
   }
 
   window.addEventListener("wallet_changed", async () => {
@@ -685,7 +690,6 @@
   async function doDepositTon(amountTon){
     const raw = getWalletRawLS();
     if(!raw) throw new Error("no_wallet");
-
     if (!window.__tonUI?.sendTransaction) throw new Error("tonconnect_not_ready");
 
     const info = await apiGet("/api/state?t=" + Date.now());
@@ -710,11 +714,13 @@
 
     await window.__tonUI.sendTransaction(tx);
 
-    await apiPost("/api/deposit_credit?t=" + Date.now(), {
-      address: raw,
-      amountTon,
-      comment
-    });
+    try{
+      await apiPost("/api/deposit_credit?t=" + Date.now(), {
+        address: raw,
+        amountTon,
+        comment
+      });
+    }catch{}
   }
 
   $("depositConfirm")?.addEventListener("click", async () => {
@@ -731,23 +737,48 @@
     }
   });
 
+  // ===== Hint / Toast =====
+  function setHint(t){
+    const el = $("hint");
+    if (el) el.textContent = t || "";
+  }
+  function setSafeError(msg){
+    setHint(msg);
+    console.warn(msg);
+  }
+
+  const toast = $("toast");
+  let toastTimer = null;
+  function showToast(kind, text){
+    if(!toast) return;
+    toast.className = "toast show " + (kind || "");
+    toast.textContent = text;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toast.className = "toast";
+      toast.textContent = "";
+    }, 1700);
+  }
+
+  // ===== Chips =====
+  let selectedAmt = 0.10;
+  $("chips")?.addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if(!chip) return;
+    document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    selectedAmt = Number(chip.dataset.amt || "0.1");
+    $("betAmt").textContent = selectedAmt.toFixed(2);
+  });
+
   // ===== History + Chances UI =====
   function renderHistory(items){
     const row = $("histRow");
     if(!row) return;
     row.innerHTML = "";
     const arr = Array.isArray(items) ? items : [];
-
-    // поддержка форматов истории:
-    // { pct }  OR { endPct }  OR { resultPct }
     for (const it of arr.slice(0, 10)) {
-      const pct = Number(
-        it?.pct ??
-        it?.endPct ??
-        it?.resultPct ??
-        0
-      );
-
+      const pct = Number(it?.pct ?? it?.endPct ?? it?.resultPct ?? 0);
       const wrap = document.createElement("div");
       wrap.className = "histItem";
       const tri = document.createElement("div");
@@ -775,31 +806,6 @@
     if ($("chShort")) $("chShort").textContent = `${S}%`;
   }
 
-  // ===== Toast =====
-  const toast = $("toast");
-  let toastTimer = null;
-  function showToast(kind, text){
-    if(!toast) return;
-    toast.className = "toast show " + (kind || "");
-    toast.textContent = text;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toast.className = "toast";
-      toast.textContent = "";
-    }, 1700);
-  }
-
-  // ===== Chips =====
-  let selectedAmt = 0.10;
-  $("chips")?.addEventListener("click", (e) => {
-    const chip = e.target.closest(".chip");
-    if(!chip) return;
-    document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-    chip.classList.add("active");
-    selectedAmt = Number(chip.dataset.amt || "0.1");
-    $("betAmt").textContent = selectedAmt.toFixed(2);
-  });
-
   // ===== Countdown =====
   const cdEl = $("countdown");
   const cdNumEl = $("cdNum");
@@ -824,27 +830,45 @@
     else cdRingEl.setAttribute("stroke", "rgba(255,77,77,.95)");
   }
 
-  // ===== Chart =====
+  // ===== Server time offset =====
+  let timeOffsetMs = 0;
+  function serverNow(){ return Date.now() + timeOffsetMs; }
+
+  // ===== Current state =====
+  let currentRound = null;
+  let lastRoundIdSeen = null;
+  let betMs = 7000;
+  let chances = { long: 50, short: 50 };
+
+  // ===== Chart (TRADING STYLE 60FPS) =====
   let chart=null, area=null, bound=null;
   const endOrb = $("endOrb");
 
-  let tickIndex = 0;
+  // “время” графика (искусственная шкала)
+  let t = 0;
+
+  // данные ограниченно
+  let data = [];
   const WINDOW_POINTS = 520;
 
-  const MIN_Y = -40;
-  const MAX_Y = 80;
+  // шкала значений (проценты)
+  const MIN_Y = -120;
+  const MAX_Y = 220;
 
-  // состояние "физики"
+  // текущая цена/скорость
   let cur = 0;
   let vel = 0;
-  let target = 0;
-  let shock = 0;
-  let wavePhase = 0;
 
-  // камера
+  // цель раунда (финал)
+  let roundTarget = 0;
+
+  // режим (тренды/флэт)
+  let regime = { type: "FLAT", until: 0, drift: 0 };
+
+  // камера по Y
   let camCenter = 0;
-  const CAM_WINDOW = 55;
-  const CAM_EASE = 0.08;
+  const CAM_WINDOW = 60;
+  const CAM_EASE = 0.06;
 
   function applySeriesColorByValue(v){
     const isGreen = (Number(v) >= 0);
@@ -856,10 +880,11 @@
   function ensureBoundNow(v){
     if(!bound) return;
     camCenter = camCenter + (v - camCenter) * CAM_EASE;
+
     const lo = clamp(camCenter - CAM_WINDOW, MIN_Y, MAX_Y);
     const hi = clamp(camCenter + CAM_WINDOW, MIN_Y, MAX_Y);
-    const t = tickIndex;
-    try{ bound.setData([{ time: t-2, value: lo }, { time: t-1, value: hi }]); }catch{}
+
+    try{ bound.setData([{ time: t-1, value: lo }, { time: t, value: hi }]); }catch{}
   }
 
   function placeOrbAtPoint(pt){
@@ -874,23 +899,17 @@
     }catch{}
   }
 
-  let data = [];
-  function pushPoint(value){
-    tickIndex++;
-    const v = clamp(value, MIN_Y, MAX_Y);
+  function resetRoundVisual(){
+    cur = 0; vel = 0; camCenter = 0;
+    t = 0;
+    data = [{ time: 0, value: 0 }];
 
-    data.push({ time: tickIndex, value: v });
-    if (data.length > WINDOW_POINTS) data = data.slice(-WINDOW_POINTS);
-
-    try{ area.update({ time: tickIndex, value: v }); }
-    catch{ try{ area.setData(data); }catch{} }
-
-    applySeriesColorByValue(v);
-    ensureBoundNow(v);
-    placeOrbAtPoint({ time: tickIndex, value: v });
-
+    try{ area.setData(data); }catch{}
+    applySeriesColorByValue(0);
+    ensureBoundNow(0);
+    placeOrbAtPoint({ time: 0, value: 0 });
     try{
-      chart.timeScale().setVisibleRange({ from: Math.max(0, tickIndex - (WINDOW_POINTS-10)), to: tickIndex + 5 });
+      chart.timeScale().setVisibleRange({ from: 0, to: 60 });
     }catch{}
   }
 
@@ -903,8 +922,16 @@
       height: 360,
       layout: { background: { type:"solid", color:"transparent" }, textColor: "rgba(242,239,255,.55)" },
       grid: { vertLines: { color: "rgba(255,255,255,.04)" }, horzLines: { color: "rgba(255,255,255,.05)" } },
-      rightPriceScale: { borderColor: "rgba(255,255,255,.10)", scaleMargins: { top: 0.10, bottom: 0.12 } },
-      timeScale: { borderColor: "rgba(255,255,255,.10)", timeVisible:false, secondsVisible:false },
+      rightPriceScale: {
+        visible: true,
+        borderColor: "rgba(255,255,255,.10)",
+        scaleMargins: { top: 0.10, bottom: 0.12 }
+      },
+      timeScale: {
+        borderColor: "rgba(255,255,255,.10)",
+        timeVisible:false,
+        secondsVisible:false
+      },
       crosshair: { vertLine: { visible:false }, horzLine: { visible:false } }
     });
 
@@ -916,6 +943,7 @@
       priceFormat: { type:"custom", formatter: (v) => `${Math.round(Number(v))}%` }
     });
 
+    // bound series — автоскейл/камера по Y
     bound = chart.addLineSeries({
       color: "rgba(0,0,0,0)",
       lineWidth: 1,
@@ -933,85 +961,131 @@
     return true;
   }
 
-  function resetRoundVisual(){
-    cur = 0; vel = 0; target = 0; shock = 0; wavePhase = 0; camCenter = 0;
-    tickIndex = 0;
-    data = [{ time: 0, value: 0 }];
-    try{ area.setData(data); }catch{}
-    applySeriesColorByValue(0);
-    placeOrbAtPoint({ time: 0, value: 0 });
-    ensureBoundNow(0);
+  // 60fps движок “как трейдинг”
+  const ADD_POINT_EVERY_MS = 140; // 6–8 точек/сек (не лагает), но плавно (обновление последней точки каждый кадр)
+  let lastAddTs = 0;
+
+  function pickRegime(nowMs){
+    const dur = 1800 + Math.random()*2000; // 1.8..3.8s
+
+    const r = Math.random();
+    let type = "FLAT";
+    if (r < 0.42) type = "UP";
+    else if (r < 0.84) type = "DOWN";
+    else type = "FLAT";
+
+    let drift = 0;
+    if (type === "UP") drift = 0.06 + Math.random()*0.12;
+    if (type === "DOWN") drift = -(0.06 + Math.random()*0.12);
+    if (type === "FLAT") drift = (Math.random()-0.5)*0.03;
+
+    regime = { type, until: nowMs + dur, drift };
   }
 
-  // ====== ВАЖНО: медленнее + рывки, без RAF ======
-  // 30fps физика, а график обновляем редко (чтобы не лагало)
-  const PHYS_MS = 33;      // 30 fps
-  const PUSH_MS = 140;     // ~7 точек/сек (медленнее)
-  let physTimer = 0;
-  let lastPush = 0;
+  function stepTrade(nowMs, progress01){
+    if (nowMs > regime.until) pickRegime(nowMs);
 
-  function stepPhysics(dtMs){
-    // стабильная физика: dt учитываем мягко
-    const dt = Math.min(2.0, Math.max(0.5, dtMs / 33));
+    const noise = (Math.random()-0.5) * 0.12;
 
-    const k = 0.0045;      // мягче (медленнее)
-    const damp = 0.955;    // меньше затухания => плавнее
-
-    const a = (target - cur) * k;
-
-    // редкие рывки (азарт): 1 раз примерно в 2-4 секунды в среднем
+    let impulse = 0;
     if (Math.random() < 0.012) {
-      const dir = (Math.random() < 0.5 ? -1 : 1);
-      const mag = 1.2 + Math.random() * 3.8;  // 1.2..5.0
-      shock += dir * mag;
+      const dir = (Math.random()<0.5 ? -1 : 1);
+      impulse = dir * (0.8 + Math.random()*3.2);
     }
 
-    vel = (vel + a + shock * 0.18) * Math.pow(damp, dt);
-    shock *= Math.pow(0.86, dt);
+    const drift = regime.drift;
 
-    wavePhase += 0.040 * dt;
-    const microWave = Math.sin(wavePhase) * 0.10 + Math.sin(wavePhase * 0.43) * 0.05;
+    // притяжение к цели усиливается к концу раунда
+    const pullStrength = 0.001 + progress01*progress01*0.010;
+    const pull = (roundTarget - cur) * pullStrength;
 
-    cur = cur + vel + microWave;
+    const accel = drift + noise + impulse + pull;
+    vel = vel*0.965 + accel;
+    cur = cur + vel;
+
     cur = clamp(cur, MIN_Y, MAX_Y);
   }
 
-  function startLoop(){
-    stopLoop();
-    lastPush = performance.now();
+  function ensureWindow(){
+    if (data.length > WINDOW_POINTS) data = data.slice(-WINDOW_POINTS);
+  }
 
-    physTimer = setInterval(() => {
-      const now = performance.now();
-      const dt = PHYS_MS;
+  function addNewPoint(){
+    t++;
+    const pt = { time: t, value: Number(cur.toFixed(4)) };
+    data.push(pt);
+    ensureWindow();
 
-      stepPhysics(dt);
+    try{ area.update(pt); }catch{
+      try{ area.setData(data); }catch{}
+    }
 
-      if (now - lastPush >= PUSH_MS) {
-        pushPoint(cur);
-        lastPush = now;
+    applySeriesColorByValue(cur);
+    ensureBoundNow(cur);
+    placeOrbAtPoint(pt);
+
+    try{
+      const from = Math.max(0, t - (WINDOW_POINTS - 30));
+      chart.timeScale().setVisibleRange({ from, to: t + 6 });
+    }catch{}
+  }
+
+  function updateLastPoint(){
+    const pt = { time: t, value: Number(cur.toFixed(4)) };
+    try{ area.update(pt); }catch{}
+    applySeriesColorByValue(cur);
+    ensureBoundNow(cur);
+    placeOrbAtPoint(pt);
+  }
+
+  let rafId = 0;
+  let lastRaf = 0;
+
+  function startLoop60(){
+    stopLoop60();
+    lastRaf = performance.now();
+    lastAddTs = lastRaf;
+    pickRegime(lastRaf);
+
+    resetRoundVisual();
+    addNewPoint();
+
+    const tick = (now) => {
+      lastRaf = now;
+
+      // прогресс раунда 0..1
+      let progress01 = 0;
+      try{
+        const ns = serverNow();
+        const startAt = Number(currentRound?.startAt);
+        const endAt   = Number(currentRound?.endAt);
+        if (Number.isFinite(startAt) && Number.isFinite(endAt) && endAt > startAt) {
+          progress01 = clamp((ns - startAt) / (endAt - startAt), 0, 1);
+        }
+      }catch{}
+
+      stepTrade(now, progress01);
+      updateLastPoint();
+
+      if (now - lastAddTs >= ADD_POINT_EVERY_MS) {
+        addNewPoint();
+        lastAddTs = now;
       }
-    }, PHYS_MS);
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
   }
 
-  function stopLoop(){
-    if (physTimer) { clearInterval(physTimer); physTimer = 0; }
+  function stopLoop60(){
+    if (rafId){ cancelAnimationFrame(rafId); rafId = 0; }
   }
-
-  // ===== Backend sync =====
-  let currentRound = null;
-  let lastRoundIdSeen = null;
-  let timeOffsetMs = 0;
-  let betMs = 7000;
-  let chances = { long: 50, short: 50 };
-
-  function serverNow(){ return Date.now() + timeOffsetMs; }
 
   function applyServerTargetFromSeries(series){
     const arr = Array.isArray(series) ? series : [];
     if(!arr.length) return;
 
-    // поддержка форматов:
-    // [[t,val],[t,val]] или [{time,value}]
     let lastVal = null;
     const last = arr[arr.length - 1];
 
@@ -1019,16 +1093,21 @@
     else if (typeof last === "object" && last) lastVal = Number(last.value);
 
     if (!Number.isFinite(lastVal)) return;
-
-    target = clamp(lastVal, MIN_Y, MAX_Y);
-
-    const d = target - cur;
-    if (Math.abs(d) > 12) shock += clamp(d * 0.03, -1.2, 1.2);
+    roundTarget = clamp(lastVal, MIN_Y, MAX_Y);
   }
 
+  // ===== Betting / Position =====
+  let pos = null; // {side, amount, roundId}
+  let bettingOpen = false;
+  let lastSettledRound = null;
+
+  function setPosStatus(){
+    $("posStatus").textContent = pos ? `${String(pos.side).toUpperCase()} • ${pos.amount.toFixed(2)} TON` : "—";
+    $("btnCancelBet").classList.toggle("disabled", !(pos && bettingOpen));
+  }
+
+  // ===== BET window calc =====
   function getBetWindowFromState(s){
-    // если backend отдаёт phase/phaseEndsAt — используем (лучше всего)
-    // иначе fallback на старую схему: startAt..endAt = BET
     const round = s?.round || null;
     if (!round) return null;
 
@@ -1051,55 +1130,8 @@
     return { inBet, leftMs, betMs: Number(s?.betMs || betMs) };
   }
 
-  async function loadState(){
-    const s = await apiGet("/api/state?t=" + Date.now());
-    timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
-    currentRound = s.round;
-    betMs = s.betMs || betMs;
-
-    chances = s.chances || chances;
-    renderChances(chances);
-
-    renderHistory(s.history || []);
-
-    if (lastRoundIdSeen == null) lastRoundIdSeen = currentRound?.roundId;
-
-    if (currentRound && lastRoundIdSeen !== currentRound.roundId){
-      lastRoundIdSeen = currentRound.roundId;
-      resetRoundVisual();
-      // новый раунд — сбрасываем позицию на UI
-      if (pos && pos.roundId !== currentRound.roundId) {
-        pos = null;
-        setPosStatus();
-      }
-    }
-
-    // обновляем UI по состоянию (кнопки/таймер)
-    updateCountdownAndButtons(s);
-  }
-
-  async function loadSeries(){
-    const x = await apiGet("/api/series?t=" + Date.now());
-    applyServerTargetFromSeries(x.series);
-  }
-
-  // ===== Betting + cancel + settle =====
-  let pos = null; // {side, amount, roundId}
-  let bettingOpen = false;
-  let lastSettledRound = null;
-
-  function setHint(t){
-    const el = $("hint");
-    if (el) el.textContent = t || "";
-  }
-
-  function setPosStatus(){
-    $("posStatus").textContent = pos ? `${String(pos.side).toUpperCase()} • ${pos.amount.toFixed(2)} TON` : "—";
-    $("btnCancelBet").classList.toggle("disabled", !(pos && bettingOpen));
-  }
-
+  // ===== КЛЮЧЕВОЕ: скрываем шкалу % на BET =====
   function updateCountdownAndButtons(state){
-    // state может быть undefined — тогда используем currentRound
     const s = state || {};
     if(!currentRound) return;
 
@@ -1108,6 +1140,15 @@
     const leftMs = Number(w?.leftMs || 0);
     const betWindowMs = Number(w?.betMs || betMs);
 
+    // СКРЫВАЕМ ШКАЛУ % В BET, ПОКАЗЫВАЕМ В PLAY
+    try{
+      if (chart){
+        chart.applyOptions({
+          rightPriceScale: { visible: !inBet }
+        });
+      }
+    }catch{}
+
     bettingOpen = inBet && !!getWalletRawLS();
 
     $("btnLong").classList.toggle("disabled", !bettingOpen);
@@ -1115,7 +1156,6 @@
 
     if (inBet){
       const secLeft = Math.max(0, Math.ceil(leftMs/1000));
-
       cdEl.classList.add("show");
       cdNumEl.textContent = String(secLeft);
       cdSubEl.textContent = "BET";
@@ -1134,6 +1174,44 @@
     $("btnCancelBet").classList.toggle("disabled", !(pos && inBet && !!getWalletRawLS()));
   }
 
+  // ===== State + Series =====
+  async function loadState(){
+    const s = await apiGet("/api/state?t=" + Date.now());
+    timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
+    currentRound = s.round;
+    betMs = s.betMs || betMs;
+
+    chances = s.chances || chances;
+    renderChances(chances);
+
+    renderHistory(s.history || []);
+
+    if (lastRoundIdSeen == null) lastRoundIdSeen = currentRound?.roundId;
+
+    if (currentRound && lastRoundIdSeen !== currentRound.roundId){
+      lastRoundIdSeen = currentRound.roundId;
+
+      // новый раунд — сброс визуала (камера и график)
+      resetRoundVisual();
+
+      // позицию сбрасываем, если она от старого раунда
+      if (pos && pos.roundId !== currentRound.roundId) {
+        pos = null;
+        setPosStatus();
+      }
+    }
+
+    updateCountdownAndButtons(s);
+  }
+
+  async function loadSeries(){
+    try{
+      const x = await apiGet("/api/series?t=" + Date.now());
+      applyServerTargetFromSeries(x.series);
+    }catch{}
+  }
+
+  // ===== Bets =====
   async function place(side){
     if(!bettingOpen) return;
     const raw = getWalletRawLS();
@@ -1165,7 +1243,7 @@
     if(!raw) { openTonModal(); return; }
 
     try{
-      const r = await apiPost("/api/bet_cancel?t=" + Date.now(), {
+      await apiPost("/api/bet_cancel?t=" + Date.now(), {
         address: raw,
         roundId: pos.roundId
       });
@@ -1174,8 +1252,6 @@
       setPosStatus();
       setHint("Ставка отменена");
       await refreshBalance().catch(()=>{});
-
-      if (r?.status === "ok") return;
     }catch(e){
       setHint("Не удалось отменить (нужен /api/bet_cancel): " + String(e?.message || e));
     }
@@ -1216,11 +1292,6 @@
     }catch(e){}
   }
 
-  function setSafeError(msg){
-    setHint(msg);
-    console.warn(msg);
-  }
-
   // ===== Boot =====
   setPosStatus();
   setHint("");
@@ -1238,13 +1309,14 @@
       await loadState().catch(e => setSafeError("STATE error: " + (e?.message || e)));
       await loadSeries().catch(()=>{});
 
-      startLoop();
+      // СТАРТ 60FPS ГРАФИКА
+      startLoop60();
 
-      // state реже, series чуть чаще — но не дёргаем UI на каждый тик
+      // state реже, series чуть чаще
       setInterval(() => loadState().catch(()=>{}), 900);
       setInterval(() => loadSeries().catch(()=>{}), 700);
 
-      // UI таймер — часто, но лёгкий
+      // UI таймер
       setInterval(() => updateCountdownAndButtons(), 160);
 
       // settle + balance
