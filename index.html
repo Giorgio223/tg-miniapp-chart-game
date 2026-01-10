@@ -5,23 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
   <title>Chart Game</title>
 
+  <!-- Telegram Mini App -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- TonConnect UI -->
   <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
 
+  <!-- Lightweight charts -->
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-  <script>
-    (function(){
-      function loadFallback(){
-        var s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js";
-        s.async = true;
-        document.head.appendChild(s);
-      }
-      setTimeout(function(){
-        if (!window.LightweightCharts || !window.LightweightCharts.createChart) loadFallback();
-      }, 1200);
-    })();
-  </script>
 
   <style>
     :root{
@@ -181,6 +172,12 @@
       gap:10px;
       pointer-events:none;
     }
+    .histCol{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      pointer-events:none;
+    }
     .histRow{
       display:flex;
       gap:6px;
@@ -223,6 +220,21 @@
     .tri.down::after{ top:-11px; border-top: 9px solid rgba(255,255,255,.92); }
     .pctText{ min-width: 52px; text-align:right; }
 
+    .pill{
+      padding:8px 10px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.20);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 14px 35px rgba(0,0,0,.35);
+      font-weight:1000;
+      font-size:11px;
+      color: rgba(242,239,255,.92);
+    }
+    .pill b{color:#fff}
+    .pill .g{color:var(--green)}
+    .pill .r{color:var(--red)}
+
     .toast{
       position:absolute;
       right:14px;
@@ -260,19 +272,33 @@
       background: rgba(0,0,0,.22);margin-bottom:10px;
     }
     .bigBox .label{font-size:11px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.25px}
-    .bigBox .value{font-size:18px;font-weight:1150;margin-top:6px}
+    .bigBox .value{font-size:18px;font-weight:1150;margin-top:6px;display:flex;align-items:center;justify-content:space-between;gap:10px}
     .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
     .btnLong{
       background: linear-gradient(180deg, rgba(49,209,124,.95), rgba(49,209,124,.50));
       border:1px solid rgba(49,209,124,.70);
       box-shadow: 0 14px 34px rgba(49,209,124,.18);
+      justify-content:center;
     }
     .btnShort{
       background: linear-gradient(180deg, rgba(255,77,77,.95), rgba(255,77,77,.50));
       border:1px solid rgba(255,77,77,.70);
       box-shadow: 0 14px 34px rgba(255,77,77,.18);
+      justify-content:center;
     }
     .hint{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.35;min-height:34px;}
+
+    .miniBtn{
+      width:40px;height:40px;border-radius:12px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      font-weight:1100;
+      cursor:pointer;
+      flex:0 0 auto;
+    }
+    .miniBtn:active{transform: translateY(1px) scale(.99)}
+    .miniBtn.disabled{opacity:.45;pointer-events:none;}
 
     .modalOverlay{
       position:fixed; inset:0;
@@ -381,7 +407,12 @@
         </div>
 
         <div class="historyWrap">
-          <div class="histRow" id="histRow"></div>
+          <div class="histCol">
+            <div class="pill" id="pillChances">
+              Шансы: <span class="g">LONG</span> <b id="chLong">50%</b> • <span class="r">SHORT</span> <b id="chShort">50%</b>
+            </div>
+            <div class="histRow" id="histRow"></div>
+          </div>
         </div>
 
         <div class="toast" id="toast"></div>
@@ -407,7 +438,10 @@
 
           <div class="bigBox">
             <div class="label">Your position</div>
-            <div class="value mono" id="posStatus">—</div>
+            <div class="value mono">
+              <span id="posStatus">—</span>
+              <button class="miniBtn disabled" id="btnCancelBet" type="button" title="Отменить ставку">↩</button>
+            </div>
           </div>
 
           <div class="actions">
@@ -431,7 +465,7 @@
 
       <div class="sheetBtns">
         <div class="sheetAction" id="actionBind">
-          <span>Привязать кошелёк</span>
+          <span>Подключить кошелёк</span>
           <small id="walletStatus">Not connected</small>
         </div>
         <div class="sheetAction" id="actionDisconnect">
@@ -478,7 +512,7 @@
     const txt = await r.text();
     let j = null;
     try{ j = JSON.parse(txt); }catch{ j = { raw: txt }; }
-    if(!r.ok) throw new Error(path + " " + r.status + " " + (j?.error || ""));
+    if(!r.ok) throw new Error(path + " " + r.status + " " + (j?.error || j?.message || ""));
     return j;
   }
   async function apiPost(path, body){
@@ -490,19 +524,19 @@
     const txt = await r.text();
     let j = null;
     try{ j = JSON.parse(txt); }catch{ j = { raw: txt }; }
-    if(!r.ok) throw new Error(path + " " + r.status + " " + (j?.error || ""));
+    if(!r.ok) throw new Error(path + " " + r.status + " " + (j?.error || j?.message || ""));
     return j;
   }
 
   function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+  function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
 
-  // ===== TonConnect =====
+  // ===== Wallet (TonConnect) =====
   let __tonCore = null;
   async function tonCore(){
     if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
     return __tonCore;
   }
-  function shortAddr(a){ return a ? (a.slice(0,6) + "..." + a.slice(-6)) : ""; }
 
   function getWalletRawLS(){
     const ls = (localStorage.getItem("walletRaw") || "").trim();
@@ -532,6 +566,7 @@
     return fr;
   }
 
+  // TonConnectUI init (стабильно для Telegram Wallet на телефоне)
   (function initTonConnect(){
     try{
       const TonConnectUI = window.TON_CONNECT_UI?.TonConnectUI;
@@ -539,6 +574,11 @@
 
       const tonUI = new TonConnectUI({
         manifestUrl: location.origin + "/tonconnect-manifest.json",
+        uiPreferences: { theme: "DARK" },
+        // важно для TWA/Telegram:
+        actionsConfiguration: {
+          twaReturnUrl: location.href
+        }
       });
 
       window.__tonUI = tonUI;
@@ -563,7 +603,7 @@
     }
   })();
 
-  // ===== Wallet UI =====
+  // Wallet modal
   const tonModal = $("tonModal");
   function openTonModal(){ tonModal?.classList.add("open"); }
   function closeTonModal(){ tonModal?.classList.remove("open"); }
@@ -573,8 +613,13 @@
   tonModal?.addEventListener("click", (e) => { if(e.target === tonModal) closeTonModal(); });
 
   $("actionBind")?.addEventListener("click", async () => {
-    if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
-    alert("TonConnect не загрузился или manifest недоступен.");
+    try{
+      // Открываем модалку TonConnectUI
+      if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
+      alert("TonConnect не загрузился (проверь скрипт).");
+    }catch(e){
+      alert("Ошибка подключения: " + String(e?.message || e));
+    }
   });
 
   $("actionDisconnect")?.addEventListener("click", async () => {
@@ -613,18 +658,13 @@
     return ton;
   }
 
-  // ✅ FIX: чтобы больше не было updateButtonsEnabled is not defined
-  function updateButtonsEnabled(){
-    try { updateCountdownAndButtons(); } catch {}
-  }
-
   window.addEventListener("wallet_changed", async () => {
     await syncWalletUI().catch(()=>{});
     await refreshBalance().catch(()=>{});
-    updateButtonsEnabled();
+    updateCountdownAndButtons();
   });
 
-  // ===== Deposit (Topup) =====
+  // ===== Deposit =====
   const depositModal = $("depositModal");
   function openDepositModal(){ depositModal?.classList.add("open"); }
   function closeDepositModal(){ depositModal?.classList.remove("open"); }
@@ -634,7 +674,7 @@
   depositModal?.addEventListener("click", (e) => { if(e.target === depositModal) closeDepositModal(); });
 
   $("btnTopup")?.addEventListener("click", () => {
-    if(!getWalletRawLS()){ openTonModal(); alert("Сначала привяжи кошелёк."); return; }
+    if(!getWalletRawLS()){ openTonModal(); alert("Сначала подключи кошелёк."); return; }
     $("depositHint").textContent = "";
     $("depositAmount").value = "";
     openDepositModal();
@@ -681,7 +721,7 @@
       if(!Number.isFinite(v) || v <= 0) { $("depositHint").textContent = "Введи сумму > 0"; return; }
       $("depositHint").textContent = "Отправляю транзакцию...";
       await doDepositTon(v);
-      $("depositHint").textContent = "Готово! Баланс обновляю...";
+      $("depositHint").textContent = "Готово! Обновляю баланс...";
       await refreshBalance().catch(()=>{});
       setTimeout(closeDepositModal, 500);
     }catch(e){
@@ -689,7 +729,7 @@
     }
   });
 
-  // ===== History UI =====
+  // ===== History + Chances UI =====
   function renderHistory(items){
     const row = $("histRow");
     if(!row) return;
@@ -708,6 +748,20 @@
       wrap.appendChild(txt);
       row.appendChild(wrap);
     }
+  }
+  function renderChances(ch){
+    // ожидаем { long: 55, short: 45 } или { longPct, shortPct }
+    let L = Number(ch?.long ?? ch?.longPct ?? 50);
+    let S = Number(ch?.short ?? ch?.shortPct ?? (100 - L));
+    if (!Number.isFinite(L)) L = 50;
+    if (!Number.isFinite(S)) S = 50;
+    if (L + S !== 100) {
+      const sum = L + S;
+      if (sum > 0) { L = Math.round(L / sum * 100); S = 100 - L; }
+      else { L = 50; S = 50; }
+    }
+    $("chLong").textContent = `${L}%`;
+    $("chShort").textContent = `${S}%`;
   }
 
   // ===== Toast =====
@@ -766,7 +820,6 @@
   let tickIndex = 0;
   const WINDOW_POINTS = 520;
 
-  // ✅ диапазон под твой backend (примерно как на скрине)
   const MIN_Y = -40;
   const MAX_Y = 80;
 
@@ -877,22 +930,19 @@
     ensureBoundNow(0);
   }
 
+  // плавно и медленнее (1x)
   function stepPhysics(){
-    // ✅ 1x скорость: мягче и медленнее
-    const k = 0.010;     // было 0.022
-    const damp = 0.955;  // чуть выше — плавнее
+    const k = 0.010;
+    const damp = 0.955;
     const a = (target - cur) * k;
 
     vel = (vel + a + shock) * damp;
     shock *= 0.88;
 
-    // лёгкая “живость”, но без дерготни
     wavePhase += 0.050;
     const microWave = Math.sin(wavePhase) * 0.12 + Math.sin(wavePhase * 0.43) * 0.06;
 
     cur = cur + vel + microWave;
-
-    // ✅ ВАЖНО: УБРАЛ локальные random spikes (они били график)
     cur = clamp(cur, MIN_Y, MAX_Y);
   }
 
@@ -903,11 +953,12 @@
     raf = requestAnimationFrame(loop);
   }
 
-  // ===== Backend state/series =====
+  // ===== Backend sync =====
   let currentRound = null;
   let lastRoundIdSeen = null;
   let timeOffsetMs = 0;
   let betMs = 7000;
+  let chances = { long: 50, short: 50 };
 
   function serverNow(){ return Date.now() + timeOffsetMs; }
 
@@ -921,7 +972,6 @@
 
     target = clamp(serverValue, MIN_Y, MAX_Y);
 
-    // если далеко — очень мягкий импульс (не дёргает)
     const d = target - cur;
     if (Math.abs(d) > 12) shock += clamp(d * 0.03, -1.2, 1.2);
   }
@@ -931,12 +981,21 @@
     timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
     currentRound = s.round;
     betMs = s.betMs || 7000;
+
+    chances = s.chances || chances;
+    renderChances(chances);
+
     renderHistory(s.history || []);
 
     if (lastRoundIdSeen == null) lastRoundIdSeen = currentRound?.roundId;
     if (currentRound && lastRoundIdSeen !== currentRound.roundId){
       lastRoundIdSeen = currentRound.roundId;
       resetRoundVisual();
+      // новый раунд — сбрасываем позицию на UI
+      if (pos && pos.roundId !== currentRound.roundId) {
+        pos = null;
+        setPosStatus();
+      }
     }
   }
 
@@ -945,14 +1004,16 @@
     applyServerTargetFromSeries(x.series);
   }
 
-  // ===== Betting + settle =====
-  let pos = null;
+  // ===== Betting + cancel + settle =====
+  let pos = null; // {side, amount, roundId}
   let bettingOpen = false;
   let lastSettledRound = null;
 
   function setHint(t){ $("hint").textContent = t || ""; }
+
   function setPosStatus(){
     $("posStatus").textContent = pos ? `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON` : "—";
+    $("btnCancelBet").classList.toggle("disabled", !(pos && bettingOpen));
   }
 
   function updateCountdownAndButtons(){
@@ -962,6 +1023,7 @@
     const inBet = now >= currentRound.startAt && now < currentRound.endAt;
 
     bettingOpen = inBet && !!getWalletRawLS();
+
     $("btnLong").classList.toggle("disabled", !bettingOpen);
     $("btnShort").classList.toggle("disabled", !bettingOpen);
 
@@ -976,13 +1038,16 @@
       setRing(leftMs / betMs);
       setRingColor(secLeft);
 
-      if(!getWalletRawLS()) setHint("Привяжи кошелёк, чтобы делать ставки.");
+      if(!getWalletRawLS()) setHint("Подключи кошелёк, чтобы делать ставки.");
       else setHint("");
     } else {
       cdEl.classList.remove("show");
       cdSubEl.textContent = "PLAY";
       setHint("");
     }
+
+    // кнопка отмены активна только когда есть ставка и идёт BET-фаза
+    $("btnCancelBet").classList.toggle("disabled", !(pos && inBet && !!getWalletRawLS()));
   }
 
   async function place(side){
@@ -1003,12 +1068,36 @@
       setHint("Ставка принята");
       await refreshBalance().catch(()=>{});
     }catch(e){
-      setHint("Ошибка ставки");
+      setHint("Ошибка ставки: " + String(e?.message || e));
     }
   }
 
   $("btnLong").addEventListener("click", () => place("long"));
   $("btnShort").addEventListener("click", () => place("short"));
+
+  // ✅ Отмена ставки (нужен бэк /api/bet_cancel)
+  $("btnCancelBet").addEventListener("click", async () => {
+    if (!pos || !currentRound) return;
+    const raw = getWalletRawLS();
+    if(!raw) { openTonModal(); return; }
+
+    try{
+      // на бэке должно быть: вернуть деньги и удалить ставку
+      const r = await apiPost("/api/bet_cancel?t=" + Date.now(), {
+        address: raw,
+        roundId: pos.roundId
+      });
+
+      pos = null;
+      setPosStatus();
+      setHint("Ставка отменена");
+      await refreshBalance().catch(()=>{});
+
+      if (r?.status === "ok") return;
+    }catch(e){
+      setHint("Не удалось отменить (нужен /api/bet_cancel): " + String(e?.message || e));
+    }
+  });
 
   async function trySettleIfNeeded(){
     if(!pos || !currentRound) return;
@@ -1044,44 +1133,41 @@
   }
 
   // ===== Boot =====
-  function waitForLW(cb){
-    let tries = 0;
-    const t = setInterval(() => {
-      if (window.LightweightCharts && window.LightweightCharts.createChart){
-        clearInterval(t);
-        cb(true);
-        return;
-      }
-      tries++;
-      if (tries > 60){
-        clearInterval(t);
-        cb(false);
-      }
-    }, 150);
+  function setSafeError(msg){
+    setHint(msg);
+    console.warn(msg);
   }
 
   setPosStatus();
   setHint("");
 
-  waitForLW(async (ok) => {
-    if(!ok){ alert("LightweightCharts не загрузился (CDN)."); return; }
-    if(!initChart()){ alert("Chart init failed"); return; }
+  (async function boot(){
+    try{
+      if(!initChart()){
+        setSafeError("Chart init failed (LightweightCharts).");
+        return;
+      }
 
-    await syncWalletUI().catch(()=>{});
-    await refreshBalance().catch(()=>{});
-    await loadState().catch(()=>{});
-    await loadSeries().catch(()=>{});
+      await syncWalletUI().catch(()=>{});
+      await refreshBalance().catch(()=>{});
 
-    cancelAnimationFrame(raf);
-    loop();
+      await loadState().catch(e => setSafeError("STATE error: " + (e?.message || e)));
+      await loadSeries().catch(()=>{});
 
-    // ✅ синхронизация/1x: реже дергаем series
-    setInterval(() => loadState().catch(()=>{}), 900);
-    setInterval(() => loadSeries().catch(()=>{}), 650);   // было 380
-    setInterval(() => updateCountdownAndButtons(), 120);
-    setInterval(() => trySettleIfNeeded(), 600);
-    setInterval(() => refreshBalance().catch(()=>{}), 6500);
-  });
+      cancelAnimationFrame(raf);
+      loop();
+
+      setInterval(() => loadState().catch(()=>{}), 900);
+      setInterval(() => loadSeries().catch(()=>{}), 650);
+      setInterval(() => updateCountdownAndButtons(), 120);
+      setInterval(() => trySettleIfNeeded(), 600);
+      setInterval(() => refreshBalance().catch(()=>{}), 6500);
+
+      updateCountdownAndButtons();
+    }catch(e){
+      setSafeError("Boot error: " + String(e?.message || e));
+    }
+  })();
 
 })();
 </script>
