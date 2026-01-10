@@ -25,7 +25,7 @@ function getRedisSafe() {
   return new Redis({ url, token });
 }
 
-// детерминированный RNG (чтобы у всех пользователей был один и тот же график)
+// детерминированный RNG (чтобы у всех пользователей был один и тот же раунд/результат)
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -36,51 +36,102 @@ function mulberry32(seed) {
   };
 }
 
-// “нитка/волны”: режимы тренд/флет/волатильность без дерготни
-function genRoundSeries(roundId, nowMs) {
+// ✅ РАСПРЕДЕЛЕНИЕ (как ты написал)
+// LONG: 0..50 = 40%, 50..100 = 5%, 100..150 = 3%, 150..200 = 2%  (итого 50%)
+// SHORT: 0..-100 = 50%
+function pickEndPctForRound(roundId) {
+  const rng = mulberry32(roundId * 1000003 + 1337);
+  const r = rng();
+
+  // SHORT (50%)
+  if (r < 0.50) {
+    return -Math.round(rng() * 100); // 0..-100
+  }
+
+  // LONG (50%) с внутренними весами 0.40/0.05/0.03/0.02
+  const x = (r - 0.50) / 0.50; // 0..1
+  if (x < 0.80) { // 40% / 50%
+    return Math.round(rng() * 50); // 0..50
+  } else if (x < 0.90) { // 5% / 50%
+    return 50 + Math.round(rng() * 50); // 50..100
+  } else if (x < 0.96) { // 3% / 50%
+    return 100 + Math.round(rng() * 50); // 100..150
+  } else { // 2% / 50%
+    return 150 + Math.round(rng() * 50); // 150..200
+  }
+}
+
+// Генератор “волатильной” серии, но с гарантированным финалом (endPct)
+function genRoundSeries(roundId, nowMs, endPct) {
   const start = roundStartAt(roundId);
   const end = start + ROUND_MS;
 
-  const stepMs = 250; // плавно, но не перегружает
-
-  const rng = mulberry32(roundId * 1000003 + 1337);
-
-  let v = 0;
-  let drift = 0;
-  let vol = 0.35;
-
-  let nextRegimeAt = start;
+  const stepMs = 200; // чуть чаще — ощущение “азарта”, но не слишком тяжело
+  const rng = mulberry32(roundId * 1000003 + 2025);
 
   const out = [];
+
+  const MIN = -110;
+  const MAX = 210;
+
+  let v = 0;
+  let vel = 0;
+
+  // режимы волатильности (меняются каждые 1.5–3.5 сек)
+  let nextRegimeAt = start;
+  let vol = 2.2;     // амплитуда шума
+  let drift = 0.0;   // средний уклон
+
   for (let t = start; t <= Math.min(nowMs, end); t += stepMs) {
     if (t >= nextRegimeAt) {
-      const mode = rng();
-      if (mode < 0.45) {
-        drift = (rng() * 0.10 - 0.05);
-        vol = 0.22 + rng() * 0.18;
-      } else if (mode < 0.85) {
-        drift = (rng() < 0.5 ? -1 : 1) * (0.06 + rng() * 0.14);
-        vol = 0.18 + rng() * 0.22;
+      const m = rng();
+      if (m < 0.35) {
+        vol = 1.6 + rng() * 2.2;
+        drift = (rng() * 0.40 - 0.20);
+      } else if (m < 0.75) {
+        vol = 2.4 + rng() * 3.4;
+        drift = (rng() < 0.5 ? -1 : 1) * (0.10 + rng() * 0.55);
       } else {
-        drift = (rng() * 0.16 - 0.08);
-        vol = 0.45 + rng() * 0.40;
+        vol = 4.0 + rng() * 5.0;
+        drift = (rng() * 0.70 - 0.35);
       }
-      nextRegimeAt = t + (2000 + Math.floor(rng() * 2000));
+      nextRegimeAt = t + (1500 + Math.floor(rng() * 2000));
     }
 
+    const p = clamp((t - start) / ROUND_MS, 0, 1);
+
+    // “якорь” раунда: постепенно тянем к endPct, но добавляем волну, чтобы было живо
+    const anchor =
+      endPct * p +
+      Math.sin((t - start) / 800) * (2.2 + vol * 0.35) +
+      Math.sin((t - start) / 2300) * (1.4 + vol * 0.20);
+
+    const pull = (anchor - v) * (0.05 + p * 0.02); // чем ближе к концу — тем сильнее “подтягиваем”
+
     const noise = (rng() * 2 - 1) * vol;
-    const wave = Math.sin((t - start) / 1400) * 0.22 + Math.sin((t - start) / 4200) * 0.14;
+    const jerk = (rng() * 2 - 1) * 0.8; // мелкая “нервность”
 
-    v = v + drift + noise + wave;
-    v *= 0.995;
+    vel = (vel + pull + drift + noise + jerk) * 0.86;
+    v = v + vel;
 
-    // диапазон “как на скрине”, без вечных -100/+100
-    v = clamp(v, -35, 60);
+    // перед самым концом сильнее загоняем в точный endPct
+    if (end - t <= 1000) {
+      const k = 0.25;
+      v = v + (endPct - v) * k;
+    }
 
+    v = clamp(v, MIN, MAX);
     out.push([t, v]);
   }
 
   if (!out.length) out.push([start, 0]);
+
+  // гарантируем точный финал на endAt (для истории/выплаты)
+  const endAt = end;
+  if (nowMs >= endAt) {
+    out.push([endAt, endPct]);
+  }
+
   return out;
 }
 
@@ -95,13 +146,11 @@ async function finalizeRoundIfEnded(redis, roundId) {
   const exists = await redis.get(key);
   if (exists != null) return;
 
-  const series = genRoundSeries(roundId, endAt);
-  const last = series[series.length - 1];
-  const endPct = Math.round(Number(last?.[1] || 0));
+  const endPct = pickEndPctForRound(roundId);
 
   await redis.set(key, String(endPct));
 
-  const item = JSON.stringify({ roundId, pct: endPct, ts: endAt });
+  const item = JSON.stringify({ roundId, pct: Number(endPct), ts: endAt });
   await redis.lpush(HISTORY_KEY, item);
   await redis.ltrim(HISTORY_KEY, 0, 49);
 }
@@ -120,8 +169,11 @@ module.exports = async function handler(req, res) {
     await finalizeRoundIfEnded(redis, rid - 1);
     await finalizeRoundIfEnded(redis, rid - 2);
 
-    const series = genRoundSeries(rid, now);
-    return res.status(200).json({ ok: true, series });
+    // берем endPct (детерминированно), чтобы серия была одинаковая у всех и совпадала с историей
+    const endPct = pickEndPctForRound(rid);
+
+    const series = genRoundSeries(rid, now, endPct);
+    return res.status(200).json({ ok: true, series, endPct });
   } catch (e) {
     return res.status(500).json({
       error: "series_error",
