@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
   <title>Chart Game</title>
 
+  <!-- Telegram + TonConnect -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/@tonconnect/ui@2.3.0/dist/tonconnect-ui.min.js"></script>
 
+  <!-- Lightweight Charts -->
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     (function(){
@@ -77,6 +79,7 @@
       border:1px solid rgba(255,255,255,.12);
       transition: transform .06s ease, background .2s ease, opacity .2s ease;
       display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
+      user-select:none;
     }
     .btn:active{transform: translateY(1px) scale(.99)}
     .btn.primary{
@@ -239,6 +242,7 @@
       cursor:pointer;
       display:grid;place-items:center;
       font-size:18px;font-weight:1100;
+      user-select:none;
     }
     .miniBtn.disabled{opacity:.45;pointer-events:none;}
     .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
@@ -287,6 +291,7 @@
       background: rgba(0,0,0,.18);
       color: var(--text);
       cursor:pointer;font-weight:1100;
+      user-select:none;
     }
     .sheetBtns{padding:12px;display:flex;flex-direction:column;gap:10px;}
     .sheetAction{
@@ -310,9 +315,8 @@
       <div class="brand"><div class="logo"></div></div>
 
       <div class="rightbar">
-        <button class="btn orange" id="btnTopup">Пополнить</button>
-
-        <button class="btn primary" id="btnBalance">
+        <button class="btn orange" id="btnTopup" type="button">Пополнить</button>
+        <button class="btn primary" id="btnBalance" type="button">
           <img class="tonIcon" src="/ton.png" alt="TON" />
           <span>Баланс:</span>
           <span class="mono" id="balTon">0.00</span>
@@ -357,13 +361,13 @@
                 <div class="label">Your position</div>
                 <div class="value mono" id="posStatus">—</div>
               </div>
-              <button class="miniBtn disabled" id="btnCancel" title="Отменить ставку">↩</button>
+              <button class="miniBtn disabled" id="btnCancel" type="button" title="Отменить ставку">↩</button>
             </div>
           </div>
 
           <div class="actions">
-            <button class="btn btnLong" id="btnLong">LONG ▲</button>
-            <button class="btn btnShort" id="btnShort">SHORT ▼</button>
+            <button class="btn btnLong" id="btnLong" type="button">LONG ▲</button>
+            <button class="btn btnShort" id="btnShort" type="button">SHORT ▼</button>
           </div>
 
           <div class="hint" id="hint"></div>
@@ -376,7 +380,7 @@
     <div class="sheet">
       <div class="sheetHeader">
         <div class="sheetTitle"><img src="/ton.png" alt="TON"> TON</div>
-        <button class="closeBtn" id="tonClose">✕</button>
+        <button class="closeBtn" id="tonClose" type="button">✕</button>
       </div>
 
       <div class="sheetBtns">
@@ -428,7 +432,7 @@
   // ===== Utils =====
   function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 
-  // ===== TonConnect (оставил максимально “как было”, без агрессивных actionsConfiguration) =====
+  // ===== TonConnect (как было, без агрессивных actionsConfiguration) =====
   let __tonCore = null;
   async function tonCore(){
     if (!__tonCore) __tonCore = await import("https://esm.sh/@ton/core@0.58.0");
@@ -499,9 +503,22 @@
   function openTonModal(){ tonModal?.classList.add("open"); }
   function closeTonModal(){ tonModal?.classList.remove("open"); }
 
+  // ✅ клики (теперь точно работают, потому что SyntaxError устранён)
   $("btnBalance")?.addEventListener("click", openTonModal);
   $("tonClose")?.addEventListener("click", closeTonModal);
   tonModal?.addEventListener("click", (e) => { if(e.target === tonModal) closeTonModal(); });
+
+  $("actionBind")?.addEventListener("click", async () => {
+    if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
+    alert("TonConnect не загрузился или manifest недоступен.");
+  });
+  $("actionDisconnect")?.addEventListener("click", async () => {
+    try{ await window.__tonUI?.disconnect?.(); }catch{}
+    localStorage.removeItem("walletRaw");
+    localStorage.removeItem("walletFriendly");
+    window.__wallet = null;
+    window.dispatchEvent(new Event("wallet_changed"));
+  });
 
   async function syncWalletUI(){
     const raw = getWalletRawLS();
@@ -514,19 +531,6 @@
     const fr = await getWalletFriendlyLS();
     walletStatus.textContent = shortAddr(fr || raw);
   }
-
-  $("actionBind")?.addEventListener("click", async () => {
-    if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
-    alert("TonConnect не загрузился или manifest недоступен.");
-  });
-
-  $("actionDisconnect")?.addEventListener("click", async () => {
-    try{ await window.__tonUI?.disconnect?.(); }catch{}
-    localStorage.removeItem("walletRaw");
-    localStorage.removeItem("walletFriendly");
-    window.__wallet = null;
-    window.dispatchEvent(new Event("wallet_changed"));
-  });
 
   function setBalanceTonUI(v){
     const ton = Number(v) || 0;
@@ -544,13 +548,18 @@
     return ton;
   }
 
+  $("btnTopup")?.addEventListener("click", () => {
+    if(!getWalletRawLS()){ openTonModal(); alert("Сначала привяжи кошелёк."); return; }
+    alert("Пополнение добавим позже.");
+  });
+
   window.addEventListener("wallet_changed", async () => {
     await syncWalletUI().catch(()=>{});
     await refreshBalance().catch(()=>{});
     updateButtonsEnabled();
   });
 
-  // ===== History UI =====
+  // ===== History UI (последние 10) =====
   function renderHistory(items){
     const row = $("histRow");
     if(!row) return;
@@ -558,17 +567,13 @@
     const arr = Array.isArray(items) ? items : [];
     for (const it of arr.slice(0, 10)) {
       const pct = Number(it.pct || 0);
-
       const wrap = document.createElement("div");
       wrap.className = "histItem";
-
       const tri = document.createElement("div");
       tri.className = "tri " + (pct >= 0 ? "up" : "down");
-
       const txt = document.createElement("div");
       txt.className = "pctText mono";
       txt.textContent = (pct > 0 ? "+" : "") + String(Math.round(pct)) + "%";
-
       wrap.appendChild(tri);
       wrap.appendChild(txt);
       row.appendChild(wrap);
@@ -589,7 +594,7 @@
     }, 1700);
   }
 
-  // ===== Chips =====
+  // ===== Chips (ЕДИНСТВЕННОЕ объявление selectedAmt — фикс SyntaxError) =====
   let selectedAmt = 0.10;
   $("chips")?.addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
@@ -601,25 +606,23 @@
     if (b) b.textContent = selectedAmt.toFixed(2);
   });
 
-  // ===== Chart “живой волной” =====
+  // ===== Chart “живой волной” (60fps, нитка) =====
   let chart=null, area=null, bound=null;
   const endOrb = $("endOrb");
 
-  // ВАЖНО: чтобы нитка была “живой”, X не реальное время — а “тик”.
-  // time = tickIndex (1 на каждый кадр)
   let tickIndex = 0;
-  const WINDOW_POINTS = 520;     // сколько точек держим на экране
+  const WINDOW_POINTS = 520;
   const MIN_Y = -100;
   const MAX_Y = 200;
 
-  // физика “пружины”
-  let cur = 0;          // текущее значение (рисуем)
-  let vel = 0;          // скорость
-  let target = 0;       // цель от сервера
-  let shock = 0;        // “азартные” импульсы (кратковременно)
+  // spring + waves
+  let cur = 0;
+  let vel = 0;
+  let target = 0;
+  let shock = 0;
   let wavePhase = 0;
 
-  // камера
+  // camera
   let camCenter = 0;
   const CAM_WINDOW = 85;
   const CAM_EASE = 0.09;
@@ -628,8 +631,7 @@
     const isGreen = (Number(v) >= 0);
     const line = isGreen ? "rgba(49,209,124,.95)" : "rgba(255,77,77,.95)";
     const top  = isGreen ? "rgba(49,209,124,.26)" : "rgba(255,77,77,.22)";
-    const bot  = "rgba(0,0,0,0)";
-    try{ area.applyOptions({ lineColor: line, topColor: top, bottomColor: bot }); }catch{}
+    try{ area.applyOptions({ lineColor: line, topColor: top, bottomColor: "rgba(0,0,0,0)" }); }catch{}
   }
 
   function ensureBoundNow(v){
@@ -654,7 +656,6 @@
   }
 
   let data = [];
-
   function pushPoint(value){
     tickIndex++;
     const v = clamp(value, MIN_Y, MAX_Y);
@@ -662,12 +663,9 @@
     data.push({ time: tickIndex, value: v });
     if (data.length > WINDOW_POINTS) data = data.slice(-WINDOW_POINTS);
 
-    // setData редко (раз в 25 тиков), update часто (каждый тик)
-    // Это резко снижает лаг.
     try{
       area.update({ time: tickIndex, value: v });
     }catch{
-      // если вдруг update не прошёл (редко) — перепакуем
       try{ area.setData(data); }catch{}
     }
 
@@ -690,11 +688,7 @@
       layout: { background: { type:"solid", color:"transparent" }, textColor: "rgba(242,239,255,.55)" },
       grid: { vertLines: { color: "rgba(255,255,255,.04)" }, horzLines: { color: "rgba(255,255,255,.05)" } },
       rightPriceScale: { borderColor: "rgba(255,255,255,.10)", scaleMargins: { top: 0.10, bottom: 0.12 } },
-      timeScale: {
-        borderColor: "rgba(255,255,255,.10)",
-        timeVisible: false,
-        secondsVisible: false
-      },
+      timeScale: { borderColor: "rgba(255,255,255,.10)", timeVisible:false, secondsVisible:false },
       crosshair: { vertLine: { visible:false }, horzLine: { visible:false } }
     });
 
@@ -713,13 +707,7 @@
       priceLineVisible: false
     });
 
-    // старт
-    tickIndex = 0;
-    data = [{ time: 0, value: 0 }];
-    area.setData(data);
-    applySeriesColorByValue(0);
-    placeOrbAtPoint({ time: 0, value: 0 });
-    ensureBoundNow(0);
+    resetRoundVisual();
 
     const ro = new ResizeObserver(() => {
       try{ chart.resize(Math.max(320, el.clientWidth || 900), 360); }catch{}
@@ -729,57 +717,9 @@
     return true;
   }
 
-  // ===== Backend state/series =====
-  let currentRound = null;
-  let lastRoundIdSeen = null;
-  let timeOffsetMs = 0;
-
-  function serverNow(){ return Date.now() + timeOffsetMs; }
-
-  // серверные точки (приходят раз в сек) — только как “цель”
-  function applyServerTargetFromSeries(series){
-    const arr = Array.isArray(series) ? series : [];
-    if(!arr.length) return;
-
-    const last = arr[arr.length - 1];
-    const serverValue = Number(last?.[1]);
-    if(!Number.isFinite(serverValue)) return;
-
-    // цель — серверное значение
-    target = clamp(serverValue, MIN_Y, MAX_Y);
-
-    // “азарт”: если новая цель далеко — добавим краткий импульс (чтобы не было “механики”)
-    const d = target - cur;
-    if (Math.abs(d) > 18) shock += clamp(d * 0.08, -6, 6);
-  }
-
-  async function loadState(){
-    const s = await apiGet("/api/state?t=" + Date.now());
-    timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
-    currentRound = s.round;
-    renderHistory(s.history || []);
-
-    // новый раунд: визуально стартуем с 0%
-    if (lastRoundIdSeen == null) lastRoundIdSeen = currentRound?.roundId;
-    if (currentRound && lastRoundIdSeen !== currentRound.roundId){
-      lastRoundIdSeen = currentRound.roundId;
-      resetRoundVisual();
-    }
-  }
-
-  async function loadSeries(){
-    const x = await apiGet("/api/series?t=" + Date.now());
-    applyServerTargetFromSeries(x.series);
-  }
-
-  // ===== The “живой” рендер 60fps =====
   function resetRoundVisual(){
-    cur = 0;
-    vel = 0;
-    target = 0;
-    shock = 0;
-    wavePhase = 0;
-
+    cur = 0; vel = 0; target = 0; shock = 0; wavePhase = 0;
+    camCenter = 0;
     tickIndex = 0;
     data = [{ time: 0, value: 0 }];
     try{ area.setData(data); }catch{}
@@ -789,21 +729,19 @@
   }
 
   function stepPhysics(){
-    // пружина к цели
-    const k = 0.032;          // жесткость (чем больше — быстрее/резче)
-    const damp = 0.92;        // затухание
+    const k = 0.032;
+    const damp = 0.92;
     const a = (target - cur) * k;
 
     vel = (vel + a + shock) * damp;
     shock *= 0.85;
 
-    // волна поверх движения (чтобы “нить” была живой)
     wavePhase += 0.085;
     const microWave = Math.sin(wavePhase) * 0.22 + Math.sin(wavePhase * 0.43) * 0.10;
 
     cur = cur + vel + microWave;
 
-    // редкие “пинки” как азарт (но не ломают раунд — всё равно тянет к target)
+    // rare “excitement” impulses
     if (Math.random() < 0.006){
       const spike = (Math.random() < 0.5 ? -1 : 1) * (8 + Math.random() * 28);
       shock += clamp(spike * 0.06, -5, 5);
@@ -819,8 +757,47 @@
     raf = requestAnimationFrame(loop);
   }
 
+  // ===== Backend state/series =====
+  let currentRound = null;
+  let lastRoundIdSeen = null;
+  let timeOffsetMs = 0;
+
+  function serverNow(){ return Date.now() + timeOffsetMs; }
+
+  function applyServerTargetFromSeries(series){
+    const arr = Array.isArray(series) ? series : [];
+    if(!arr.length) return;
+    const last = arr[arr.length - 1];
+    const serverValue = Number(last?.[1]);
+    if(!Number.isFinite(serverValue)) return;
+
+    target = clamp(serverValue, MIN_Y, MAX_Y);
+
+    const d = target - cur;
+    if (Math.abs(d) > 18) shock += clamp(d * 0.08, -6, 6);
+  }
+
+  async function loadState(){
+    const s = await apiGet("/api/state?t=" + Date.now());
+    timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
+    currentRound = s.round;
+    renderHistory(s.history || []);
+
+    if (lastRoundIdSeen == null) lastRoundIdSeen = currentRound?.roundId;
+    if (currentRound && lastRoundIdSeen !== currentRound.roundId){
+      lastRoundIdSeen = currentRound.roundId;
+      resetRoundVisual();
+      // сразу дернем series, чтобы цель была актуальна в начале
+      loadSeries().catch(()=>{});
+    }
+  }
+
+  async function loadSeries(){
+    const x = await apiGet("/api/series?t=" + Date.now());
+    applyServerTargetFromSeries(x.series);
+  }
+
   // ===== Betting + settle + cancel =====
-  let selectedAmt = 0.10;
   let pos = null;
   let bettingOpen = false;
   let lastSettledRound = null;
@@ -845,17 +822,13 @@
 
     bettingOpen = inBet && walletOk;
 
-    if (bettingOpen){
-      b1.classList.remove("disabled");
-      b2.classList.remove("disabled");
-      setHint("");
-    } else {
-      b1.classList.add("disabled");
-      b2.classList.add("disabled");
-      if(inBet && !walletOk) setHint("Привяжи кошелёк, чтобы делать ставки.");
-    }
+    b1.classList.toggle("disabled", !bettingOpen);
+    b2.classList.toggle("disabled", !bettingOpen);
 
-    // cancel доступен только если ставка есть и окно ставок ещё открыто
+    if(inBet && !walletOk) setHint("Привяжи кошелёк, чтобы делать ставки.");
+    else if (!bettingOpen) setHint("");
+    else setHint("");
+
     const canCancel = !!pos && inBet && walletOk && pos.roundId === currentRound.roundId;
     bc.classList.toggle("disabled", !canCancel);
   }
@@ -911,9 +884,7 @@
     if(!pos || !currentRound) return;
 
     const now = serverNow();
-    // сеттлим после окончания раунда
     if(now < currentRound.nextAt) return;
-
     if (lastSettledRound === pos.roundId) return;
 
     const raw = getWalletRawLS();
@@ -944,15 +915,6 @@
   }
 
   // ===== Boot =====
-  $("btnTopup")?.addEventListener("click", () => {
-    if(!getWalletRawLS()){ openTonModal(); alert("Сначала привяжи кошелёк."); return; }
-    alert("Пополнение добавим позже.");
-  });
-
-  // init
-  setPosStatus();
-  setHint("");
-
   function waitForLW(cb){
     let tries = 0;
     const t = setInterval(() => {
@@ -969,6 +931,9 @@
     }, 150);
   }
 
+  setPosStatus();
+  setHint("");
+
   waitForLW(async (ok) => {
     if(!ok){
       alert("LightweightCharts не загрузился (CDN).");
@@ -979,14 +944,12 @@
       return;
     }
 
-    // старт UI
     await syncWalletUI().catch(()=>{});
     await refreshBalance().catch(()=>{});
     await loadState().catch(()=>{});
     await loadSeries().catch(()=>{});
     updateButtonsEnabled();
 
-    // плавная анимация
     cancelAnimationFrame(raf);
     loop();
 
@@ -994,7 +957,6 @@
     setInterval(() => loadState().catch(()=>{}), 900);
     setInterval(() => loadSeries().catch(()=>{}), 950);
 
-    // ставка/сеттл
     setInterval(() => updateButtonsEnabled(), 200);
     setInterval(() => trySettleIfNeeded(), 600);
     setInterval(() => refreshBalance().catch(()=>{}), 6500);
