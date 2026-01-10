@@ -613,6 +613,11 @@
     return ton;
   }
 
+  // ✅ FIX: чтобы больше не было updateButtonsEnabled is not defined
+  function updateButtonsEnabled(){
+    try { updateCountdownAndButtons(); } catch {}
+  }
+
   window.addEventListener("wallet_changed", async () => {
     await syncWalletUI().catch(()=>{});
     await refreshBalance().catch(()=>{});
@@ -641,7 +646,6 @@
 
     if (!window.__tonUI?.sendTransaction) throw new Error("tonconnect_not_ready");
 
-    // спросим у сервера адрес получателя + nonce
     const info = await apiGet("/api/state?t=" + Date.now());
     const to = info?.treasuryAddress;
     if (!to) throw new Error("no_treasury_address");
@@ -649,7 +653,6 @@
     const nonce = String(Date.now()) + ":" + String(Math.floor(Math.random()*1e9));
     const comment = `deposit:${raw}:${nonce}`;
 
-    // payload comment (text)
     const { beginCell } = await tonCore();
     const cell = beginCell().storeUint(0, 32).storeStringTail(comment).endCell();
     const payloadBoc = btoa(String.fromCharCode(...cell.toBoc({ idx:false })));
@@ -665,7 +668,6 @@
 
     await window.__tonUI.sendTransaction(tx);
 
-    // кредитуем баланс в Redis (как в простых версиях, без on-chain проверки)
     await apiPost("/api/deposit_credit?t=" + Date.now(), {
       address: raw,
       amountTon,
@@ -722,7 +724,7 @@
     }, 1700);
   }
 
-  // ===== Chips (единственное объявление) =====
+  // ===== Chips =====
   let selectedAmt = 0.10;
   $("chips")?.addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
@@ -757,14 +759,16 @@
     else cdRingEl.setAttribute("stroke", "rgba(255,77,77,.95)");
   }
 
-  // ===== Chart “живой волной” + замедление =====
+  // ===== Chart =====
   let chart=null, area=null, bound=null;
   const endOrb = $("endOrb");
 
   let tickIndex = 0;
   const WINDOW_POINTS = 520;
-  const MIN_Y = -100;
-  const MAX_Y = 200;
+
+  // ✅ диапазон под твой backend (примерно как на скрине)
+  const MIN_Y = -40;
+  const MAX_Y = 80;
 
   let cur = 0;
   let vel = 0;
@@ -773,8 +777,8 @@
   let wavePhase = 0;
 
   let camCenter = 0;
-  const CAM_WINDOW = 85;
-  const CAM_EASE = 0.09;
+  const CAM_WINDOW = 55;
+  const CAM_EASE = 0.08;
 
   function applySeriesColorByValue(v){
     const isGreen = (Number(v) >= 0);
@@ -874,25 +878,21 @@
   }
 
   function stepPhysics(){
-    // ✅ замедление: меньше k и больше damp -> мягче и медленнее
-    const k = 0.022;
-    const damp = 0.94;
+    // ✅ 1x скорость: мягче и медленнее
+    const k = 0.010;     // было 0.022
+    const damp = 0.955;  // чуть выше — плавнее
     const a = (target - cur) * k;
 
     vel = (vel + a + shock) * damp;
-    shock *= 0.86;
+    shock *= 0.88;
 
-    wavePhase += 0.070;
-    const microWave = Math.sin(wavePhase) * 0.22 + Math.sin(wavePhase * 0.43) * 0.10;
+    // лёгкая “живость”, но без дерготни
+    wavePhase += 0.050;
+    const microWave = Math.sin(wavePhase) * 0.12 + Math.sin(wavePhase * 0.43) * 0.06;
 
     cur = cur + vel + microWave;
 
-    // “интрига”, но реже
-    if (Math.random() < 0.004){
-      const spike = (Math.random() < 0.5 ? -1 : 1) * (8 + Math.random() * 28);
-      shock += clamp(spike * 0.05, -4.2, 4.2);
-    }
-
+    // ✅ ВАЖНО: УБРАЛ локальные random spikes (они били график)
     cur = clamp(cur, MIN_Y, MAX_Y);
   }
 
@@ -921,9 +921,9 @@
 
     target = clamp(serverValue, MIN_Y, MAX_Y);
 
-    // если далеко — импульс
+    // если далеко — очень мягкий импульс (не дёргает)
     const d = target - cur;
-    if (Math.abs(d) > 18) shock += clamp(d * 0.07, -5, 5);
+    if (Math.abs(d) > 12) shock += clamp(d * 0.03, -1.2, 1.2);
   }
 
   async function loadState(){
@@ -1075,9 +1075,9 @@
     cancelAnimationFrame(raf);
     loop();
 
-    // ✅ ВАЖНО: замедлил “рисование” -> реже тянем series
+    // ✅ синхронизация/1x: реже дергаем series
     setInterval(() => loadState().catch(()=>{}), 900);
-    setInterval(() => loadSeries().catch(()=>{}), 380);   // было быстрее
+    setInterval(() => loadSeries().catch(()=>{}), 650);   // было 380
     setInterval(() => updateCountdownAndButtons(), 120);
     setInterval(() => trySettleIfNeeded(), 600);
     setInterval(() => refreshBalance().catch(()=>{}), 6500);
