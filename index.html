@@ -69,6 +69,7 @@
       transition: transform .06s ease, background .2s ease, opacity .2s ease;
       display:inline-flex;align-items:center;gap:8px;white-space:nowrap;
       user-select:none;
+      -webkit-tap-highlight-color: transparent;
     }
     .btn:active{transform: translateY(1px) scale(.99)}
     .btn.primary{
@@ -361,9 +362,10 @@
     .row2 .sheetAction{flex:1 1 0;justify-content:center;}
 
     a[href*="tradingview"], a[href*="TradingView"]{display:none!important;}
-  
-  #pillChances{display:none!important;}
-</style>
+
+    /* УБИРАЕМ ШАНСЫ С ГРАФИКА */
+    #pillChances{display:none!important;}
+  </style>
 </head>
 
 <body>
@@ -577,7 +579,6 @@
       const tonUI = new TonConnectUI({
         manifestUrl: location.origin + "/tonconnect-manifest.json",
         uiPreferences: { theme: "DARK" },
-        // важно для TWA/Telegram:
         actionsConfiguration: {
           twaReturnUrl: (window.__TWA_RETURN_URL || location.href)
         }
@@ -616,7 +617,6 @@
 
   $("actionBind")?.addEventListener("click", async () => {
     try{
-      // Открываем модалку TonConnectUI
       if (window.__tonUI?.openModal) { await window.__tonUI.openModal(); return; }
       alert("TonConnect не загрузился (проверь скрипт).");
     }catch(e){
@@ -737,8 +737,17 @@
     if(!row) return;
     row.innerHTML = "";
     const arr = Array.isArray(items) ? items : [];
+
+    // поддержка форматов истории:
+    // { pct }  OR { endPct }  OR { resultPct }
     for (const it of arr.slice(0, 10)) {
-      const pct = Number(it.pct || 0);
+      const pct = Number(
+        it?.pct ??
+        it?.endPct ??
+        it?.resultPct ??
+        0
+      );
+
       const wrap = document.createElement("div");
       wrap.className = "histItem";
       const tri = document.createElement("div");
@@ -751,8 +760,8 @@
       row.appendChild(wrap);
     }
   }
+
   function renderChances(ch){
-    // ожидаем { long: 55, short: 45 } или { longPct, shortPct }
     let L = Number(ch?.long ?? ch?.longPct ?? 50);
     let S = Number(ch?.short ?? ch?.shortPct ?? (100 - L));
     if (!Number.isFinite(L)) L = 50;
@@ -762,8 +771,8 @@
       if (sum > 0) { L = Math.round(L / sum * 100); S = 100 - L; }
       else { L = 50; S = 50; }
     }
-    $("chLong").textContent = `${L}%`;
-    $("chShort").textContent = `${S}%`;
+    if ($("chLong")) $("chLong").textContent = `${L}%`;
+    if ($("chShort")) $("chShort").textContent = `${S}%`;
   }
 
   // ===== Toast =====
@@ -825,12 +834,14 @@
   const MIN_Y = -40;
   const MAX_Y = 80;
 
+  // состояние "физики"
   let cur = 0;
   let vel = 0;
   let target = 0;
   let shock = 0;
   let wavePhase = 0;
 
+  // камера
   let camCenter = 0;
   const CAM_WINDOW = 55;
   const CAM_EASE = 0.08;
@@ -932,36 +943,58 @@
     ensureBoundNow(0);
   }
 
-  // плавно и медленнее (1x)
-  function stepPhysics(){
-    const k = 0.006;
-    const damp = 0.945;
+  // ====== ВАЖНО: медленнее + рывки, без RAF ======
+  // 30fps физика, а график обновляем редко (чтобы не лагало)
+  const PHYS_MS = 33;      // 30 fps
+  const PUSH_MS = 140;     // ~7 точек/сек (медленнее)
+  let physTimer = 0;
+  let lastPush = 0;
+
+  function stepPhysics(dtMs){
+    // стабильная физика: dt учитываем мягко
+    const dt = Math.min(2.0, Math.max(0.5, dtMs / 33));
+
+    const k = 0.0045;      // мягче (медленнее)
+    const damp = 0.955;    // меньше затухания => плавнее
+
     const a = (target - cur) * k;
 
-    vel = (vel + a + shock) * damp;
-    shock *= 0.88;
+    // редкие рывки (азарт): 1 раз примерно в 2-4 секунды в среднем
+    if (Math.random() < 0.012) {
+      const dir = (Math.random() < 0.5 ? -1 : 1);
+      const mag = 1.2 + Math.random() * 3.8;  // 1.2..5.0
+      shock += dir * mag;
+    }
 
-    wavePhase += 0.050;
-    const microWave = Math.sin(wavePhase) * 0.12 + Math.sin(wavePhase * 0.43) * 0.06;
+    vel = (vel + a + shock * 0.18) * Math.pow(damp, dt);
+    shock *= Math.pow(0.86, dt);
+
+    wavePhase += 0.040 * dt;
+    const microWave = Math.sin(wavePhase) * 0.10 + Math.sin(wavePhase * 0.43) * 0.05;
 
     cur = cur + vel + microWave;
     cur = clamp(cur, MIN_Y, MAX_Y);
   }
 
-  let raf = 0;
-  const PUSH_MS = 120; // slower drawing (8-9 points/sec)
-  let lastPushTs = 0;
+  function startLoop(){
+    stopLoop();
+    lastPush = performance.now();
 
-  function loop(ts){
-    ts = (typeof ts === 'number') ? ts : performance.now();
-    stepPhysics();
-    // throttle chart updates to reduce lag + make movement slower
-    if(!lastPushTs) lastPushTs = ts;
-    if(ts - lastPushTs >= PUSH_MS){
-      pushPoint(cur);
-      lastPushTs = ts;
-    }
-    raf = requestAnimationFrame(loop);
+    physTimer = setInterval(() => {
+      const now = performance.now();
+      const dt = PHYS_MS;
+
+      stepPhysics(dt);
+
+      if (now - lastPush >= PUSH_MS) {
+        pushPoint(cur);
+        lastPush = now;
+      }
+    }, PHYS_MS);
+  }
+
+  function stopLoop(){
+    if (physTimer) { clearInterval(physTimer); physTimer = 0; }
   }
 
   // ===== Backend sync =====
@@ -977,21 +1010,52 @@
     const arr = Array.isArray(series) ? series : [];
     if(!arr.length) return;
 
+    // поддержка форматов:
+    // [[t,val],[t,val]] или [{time,value}]
+    let lastVal = null;
     const last = arr[arr.length - 1];
-    const serverValue = Number(last?.[1]);
-    if(!Number.isFinite(serverValue)) return;
 
-    target = clamp(serverValue, MIN_Y, MAX_Y);
+    if (Array.isArray(last) && last.length >= 2) lastVal = Number(last[1]);
+    else if (typeof last === "object" && last) lastVal = Number(last.value);
+
+    if (!Number.isFinite(lastVal)) return;
+
+    target = clamp(lastVal, MIN_Y, MAX_Y);
 
     const d = target - cur;
     if (Math.abs(d) > 12) shock += clamp(d * 0.03, -1.2, 1.2);
+  }
+
+  function getBetWindowFromState(s){
+    // если backend отдаёт phase/phaseEndsAt — используем (лучше всего)
+    // иначе fallback на старую схему: startAt..endAt = BET
+    const round = s?.round || null;
+    if (!round) return null;
+
+    const now = serverNow();
+    const phase = s?.phase;
+    const phaseEndsAt = Number(s?.phaseEndsAt);
+
+    if (phase && Number.isFinite(phaseEndsAt)) {
+      const inBet = (phase === "BET");
+      const leftMs = Math.max(0, phaseEndsAt - now);
+      return { inBet, leftMs, betMs: Number(s?.betMs || betMs) };
+    }
+
+    const startAt = Number(round.startAt);
+    const endAt = Number(round.endAt);
+    if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) return null;
+
+    const inBet = now >= startAt && now < endAt;
+    const leftMs = Math.max(0, endAt - now);
+    return { inBet, leftMs, betMs: Number(s?.betMs || betMs) };
   }
 
   async function loadState(){
     const s = await apiGet("/api/state?t=" + Date.now());
     timeOffsetMs = (s.serverNow || Date.now()) - Date.now();
     currentRound = s.round;
-    betMs = s.betMs || 7000;
+    betMs = s.betMs || betMs;
 
     chances = s.chances || chances;
     renderChances(chances);
@@ -999,6 +1063,7 @@
     renderHistory(s.history || []);
 
     if (lastRoundIdSeen == null) lastRoundIdSeen = currentRound?.roundId;
+
     if (currentRound && lastRoundIdSeen !== currentRound.roundId){
       lastRoundIdSeen = currentRound.roundId;
       resetRoundVisual();
@@ -1008,6 +1073,9 @@
         setPosStatus();
       }
     }
+
+    // обновляем UI по состоянию (кнопки/таймер)
+    updateCountdownAndButtons(s);
   }
 
   async function loadSeries(){
@@ -1020,18 +1088,25 @@
   let bettingOpen = false;
   let lastSettledRound = null;
 
-  function setHint(t){ $("hint").textContent = t || ""; }
+  function setHint(t){
+    const el = $("hint");
+    if (el) el.textContent = t || "";
+  }
 
   function setPosStatus(){
-    $("posStatus").textContent = pos ? `${pos.side.toUpperCase()} • ${pos.amount.toFixed(2)} TON` : "—";
+    $("posStatus").textContent = pos ? `${String(pos.side).toUpperCase()} • ${pos.amount.toFixed(2)} TON` : "—";
     $("btnCancelBet").classList.toggle("disabled", !(pos && bettingOpen));
   }
 
-  function updateCountdownAndButtons(){
+  function updateCountdownAndButtons(state){
+    // state может быть undefined — тогда используем currentRound
+    const s = state || {};
     if(!currentRound) return;
 
-    const now = serverNow();
-    const inBet = now >= currentRound.startAt && now < currentRound.endAt;
+    const w = getBetWindowFromState(s);
+    const inBet = !!w?.inBet;
+    const leftMs = Number(w?.leftMs || 0);
+    const betWindowMs = Number(w?.betMs || betMs);
 
     bettingOpen = inBet && !!getWalletRawLS();
 
@@ -1039,14 +1114,13 @@
     $("btnShort").classList.toggle("disabled", !bettingOpen);
 
     if (inBet){
-      const leftMs = currentRound.endAt - now;
       const secLeft = Math.max(0, Math.ceil(leftMs/1000));
 
       cdEl.classList.add("show");
       cdNumEl.textContent = String(secLeft);
       cdSubEl.textContent = "BET";
 
-      setRing(leftMs / betMs);
+      setRing(betWindowMs > 0 ? (leftMs / betWindowMs) : 0);
       setRingColor(secLeft);
 
       if(!getWalletRawLS()) setHint("Подключи кошелёк, чтобы делать ставки.");
@@ -1057,7 +1131,6 @@
       setHint("");
     }
 
-    // кнопка отмены активна только когда есть ставка и идёт BET-фаза
     $("btnCancelBet").classList.toggle("disabled", !(pos && inBet && !!getWalletRawLS()));
   }
 
@@ -1086,14 +1159,12 @@
   $("btnLong").addEventListener("click", () => place("long"));
   $("btnShort").addEventListener("click", () => place("short"));
 
-  // ✅ Отмена ставки (нужен бэк /api/bet_cancel)
   $("btnCancelBet").addEventListener("click", async () => {
     if (!pos || !currentRound) return;
     const raw = getWalletRawLS();
     if(!raw) { openTonModal(); return; }
 
     try{
-      // на бэке должно быть: вернуть деньги и удалить ставку
       const r = await apiPost("/api/bet_cancel?t=" + Date.now(), {
         address: raw,
         roundId: pos.roundId
@@ -1114,7 +1185,9 @@
     if(!pos || !currentRound) return;
 
     const now = serverNow();
-    if(now < currentRound.nextAt) return;
+    const nextAt = Number(currentRound?.nextAt);
+    if (Number.isFinite(nextAt) && now < nextAt) return;
+
     if (lastSettledRound === pos.roundId) return;
 
     const raw = getWalletRawLS();
@@ -1143,12 +1216,12 @@
     }catch(e){}
   }
 
-  // ===== Boot =====
   function setSafeError(msg){
     setHint(msg);
     console.warn(msg);
   }
 
+  // ===== Boot =====
   setPosStatus();
   setHint("");
 
@@ -1165,13 +1238,17 @@
       await loadState().catch(e => setSafeError("STATE error: " + (e?.message || e)));
       await loadSeries().catch(()=>{});
 
-      cancelAnimationFrame(raf);
-      loop();
+      startLoop();
 
+      // state реже, series чуть чаще — но не дёргаем UI на каждый тик
       setInterval(() => loadState().catch(()=>{}), 900);
-      setInterval(() => loadSeries().catch(()=>{}), 650);
-      setInterval(() => updateCountdownAndButtons(), 120);
-      setInterval(() => trySettleIfNeeded(), 600);
+      setInterval(() => loadSeries().catch(()=>{}), 700);
+
+      // UI таймер — часто, но лёгкий
+      setInterval(() => updateCountdownAndButtons(), 160);
+
+      // settle + balance
+      setInterval(() => trySettleIfNeeded(), 650);
       setInterval(() => refreshBalance().catch(()=>{}), 6500);
 
       updateCountdownAndButtons();
