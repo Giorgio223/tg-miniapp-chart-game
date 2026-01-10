@@ -361,6 +361,7 @@
     .row2 .sheetAction{flex:1 1 0;justify-content:center;}
 
     a[href*="tradingview"], a[href*="TradingView"]{display:none!important;}
+    #pillChances{display:none!important;}
   </style>
 </head>
 
@@ -820,8 +821,8 @@
   let tickIndex = 0;
   const WINDOW_POINTS = 520;
 
-  const MIN_Y = -40;
-  const MAX_Y = 80;
+  const MIN_Y = -110;
+  const MAX_Y = 210;
 
   let cur = 0;
   let vel = 0;
@@ -830,7 +831,7 @@
   let wavePhase = 0;
 
   let camCenter = 0;
-  const CAM_WINDOW = 55;
+  const CAM_WINDOW = 140;
   const CAM_EASE = 0.08;
 
   function applySeriesColorByValue(v){
@@ -932,15 +933,15 @@
 
   // плавно и медленнее (1x)
   function stepPhysics(){
-    const k = 0.010;
-    const damp = 0.955;
+    const k = 0.018;
+    const damp = 0.935;
     const a = (target - cur) * k;
 
     vel = (vel + a + shock) * damp;
     shock *= 0.88;
 
-    wavePhase += 0.050;
-    const microWave = Math.sin(wavePhase) * 0.12 + Math.sin(wavePhase * 0.43) * 0.06;
+    wavePhase += 0.085;
+    const microWave = Math.sin(wavePhase) * 0.38 + Math.sin(wavePhase * 0.47) * 0.18;
 
     cur = cur + vel + microWave;
     cur = clamp(cur, MIN_Y, MAX_Y);
@@ -973,7 +974,7 @@
     target = clamp(serverValue, MIN_Y, MAX_Y);
 
     const d = target - cur;
-    if (Math.abs(d) > 12) shock += clamp(d * 0.03, -1.2, 1.2);
+    if (Math.abs(d) > 18) shock += clamp(d * 0.06, -2.8, 2.8);
   }
 
   async function loadState(){
