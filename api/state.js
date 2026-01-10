@@ -112,7 +112,11 @@ module.exports = async function handler(req, res) {
       history = (rawHist || []).map(safeJson).filter(Boolean);
     }
 
-    return res.status(200).json({
+    return 
+    // даже если Redis не настроен, можем вычислить результат детерминированно
+    const lastFinishedRoundId = roundId - 1;
+    const lastFinishedPct = lastFinishedRoundId >= 0 ? pickEndPctForRound(lastFinishedRoundId) : 0;
+res.status(200).json({
       ok: true,
       serverNow: now,
       betMs: BET_MS,
@@ -120,7 +124,8 @@ module.exports = async function handler(req, res) {
       treasuryAddress: process.env.TREASURY_TON_ADDRESS || "",
       round: { roundId, startAt, endAt, nextAt },
       chances: { long: 50, short: 50 },
-      history
+      history,
+      lastFinished: { roundId: lastFinishedRoundId, pct: lastFinishedPct }
     });
   } catch (e) {
     return res.status(500).json({
