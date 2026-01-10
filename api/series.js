@@ -7,11 +7,11 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const BET_MS = 7000;
-const PLAY_MS = 12000;
-const ROUND_MS = BET_MS + PLAY_MS;
+// 7 секунд ставки + 12 секунд игра
+export const BET_MS = 7000;
+export const PLAY_MS = 12000;
+export const ROUND_MS = BET_MS + PLAY_MS;
 
-const SERIES_KEY = "chart:series_pct";
 const HISTORY_KEY = "round:history";
 
 function roundIdByNow(nowMs) {
@@ -24,7 +24,7 @@ function clamp(x, a, b) {
   return Math.max(a, Math.min(b, x));
 }
 
-// простой детерминированный PRNG
+// детерминированный RNG
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -35,38 +35,71 @@ function mulberry32(seed) {
   };
 }
 
+// генерация “как нитка”: мягкая случайная линия с режимами (тренд/флэт/волатильность)
 function genRoundSeries(roundId, nowMs) {
   const start = roundStartAt(roundId);
-  const endPlay = start + ROUND_MS;
+  const end = start + ROUND_MS;
+
+  // точка каждые 250мс — плавнее, но не жрёт трафик как 60fps
+  const stepMs = 250;
+
   const rng = mulberry32(roundId * 1000003 + 1337);
 
-  // каждую 1 секунду точка (как раньше)
-  const stepMs = 1000;
-
   let v = 0;
+  let drift = 0;          // тренд
+  let vol = 0.35;         // волатильность
+
+  let nextRegimeAt = start;
+
   const out = [];
-  for (let t = start; t <= Math.min(nowMs, endPlay); t += stepMs) {
-    // шаги +-2.2, и чуть волны
-    const step = (rng() * 4.4 - 2.2);
-    const wave = Math.sin((t - start) / 1200) * 0.35 + Math.sin((t - start) / 3100) * 0.18;
-    v = v + step + wave;
-    v = clamp(v, -100, 200);
+  for (let t = start; t <= Math.min(nowMs, end); t += stepMs) {
+    // каждые ~2-4 секунды меняем режим
+    if (t >= nextRegimeAt) {
+      const mode = rng();
+      if (mode < 0.45) {
+        // флет
+        drift = (rng() * 0.10 - 0.05);
+        vol = 0.22 + rng() * 0.18;
+      } else if (mode < 0.85) {
+        // тренд
+        drift = (rng() < 0.5 ? -1 : 1) * (0.06 + rng() * 0.14);
+        vol = 0.18 + rng() * 0.22;
+      } else {
+        // всплеск (интрига)
+        drift = (rng() * 0.16 - 0.08);
+        vol = 0.45 + rng() * 0.40;
+      }
+      nextRegimeAt = t + (2000 + Math.floor(rng() * 2000));
+    }
+
+    // шум + волна
+    const noise = (rng() * 2 - 1) * vol;
+    const wave = Math.sin((t - start) / 1400) * 0.22 + Math.sin((t - start) / 4200) * 0.14;
+
+    // мягкая “инерция”, чтобы не пилило
+    v = v + drift + noise + wave;
+    v *= 0.995;
+
+    // диапазон как у слотов на скрине (примерно): не улетать в -100/+100 постоянно
+    v = clamp(v, -35, 60);
+
     out.push([t, v]);
   }
 
-  // гарантируем хотя бы 1 точку
   if (!out.length) out.push([start, 0]);
-
   return out;
 }
 
-async function finalizeIfEnded(roundId) {
-  const key = `round:endPct:${roundId}`;
-  const exists = await redis.get(key);
-  if (exists != null) return;
+// финализация раунда => сохраняем результат в redis + историю
+async function finalizeRoundIfEnded(roundId) {
+  if (roundId < 0) return;
 
   const endAt = roundStartAt(roundId) + ROUND_MS;
   if (Date.now() < endAt) return;
+
+  const key = `round:endPct:${roundId}`;
+  const exists = await redis.get(key);
+  if (exists != null) return;
 
   const series = genRoundSeries(roundId, endAt);
   const last = series[series.length - 1];
@@ -74,7 +107,6 @@ async function finalizeIfEnded(roundId) {
 
   await redis.set(key, String(endPct));
 
-  // пушим в history (LPUSH, потом LTRIM)
   const item = JSON.stringify({ roundId, pct: endPct, ts: endAt });
   await redis.lpush(HISTORY_KEY, item);
   await redis.ltrim(HISTORY_KEY, 0, 49);
@@ -88,17 +120,11 @@ export default async function handler(req, res) {
     const now = Date.now();
     const rid = roundIdByNow(now);
 
-    // серии для текущего раунда
+    // важно: финализируем прошлые раунды и тут тоже
+    await finalizeRoundIfEnded(rid - 1);
+    await finalizeRoundIfEnded(rid - 2);
+
     const series = genRoundSeries(rid, now);
-
-    // кешируем для дебага (не обязательно, но удобно)
-    await redis.set(SERIES_KEY, JSON.stringify(series));
-
-    // финализируем предыдущий раунд, если он закончился
-    await finalizeIfEnded(rid - 1);
-    // на всякий случай: если сервер долго спал, попробуем ещё
-    await finalizeIfEnded(rid - 2);
-
     return res.status(200).json({ ok: true, series });
   } catch (e) {
     return res.status(500).json({ error: "series_error", message: String(e) });
